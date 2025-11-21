@@ -2,15 +2,11 @@
 
 module mac2_tb;
 
-    parameter width = 8;
+    reg [31:0] a;
+    reg [31:0] kernel;
+    wire [31:0] out;
 
-    reg [(4*width)-1:0] a;
-    reg [(4*width)-1:0] kernel;
-    wire [(width-1):0] out;
-
-    mac2 #(
-        .width(width)
-    ) dut (
+    mac2 dut (
         .a(a),
         .kernel(kernel),
         .out(out)
@@ -20,6 +16,8 @@ module mac2_tb;
         a = {8'd4, 8'd3, 8'd2, 8'd1};
         kernel = {8'd8, 8'd7, 8'd6, 8'd5};
         #10;
+
+        $finish;
     end
 
 endmodule;
