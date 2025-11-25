@@ -25,8 +25,8 @@ module convolution #(
     integer i, j;
 
     // Sliding window coordinates
-    reg [$clog2(HEIGHT):0] y;
     reg [$clog2(WIDTH):0]  x;
+    reg [$clog2(HEIGHT):0] y;
 
     reg signed [ACC_WIDTH-1:0] acc;
 
@@ -39,17 +39,29 @@ module convolution #(
 
     state_t state;
 
+    initial begin 
+        state     <= IDLE;
+        x         <= 0;
+        y         <= 0;
+        i         <= 0;
+        j         <= 0;
+        out_valid <= 0;
+        done      <= 0;
+        acc       <= 0;
+    end
+
     always @(posedge clk or posedge rst) begin
         if (rst) begin
             state     <= IDLE;
             x         <= 0;
             y         <= 0;
+            i         <= 0;
+            j         <= 0;
             out_valid <= 0;
             done      <= 0;
             acc       <= 0;
         end else begin
             case (state)
-
                 IDLE: begin
                     out_valid <= 0;
                     done      <= 0;
@@ -63,18 +75,11 @@ module convolution #(
 
                 // Compute convolution for current window
                 COMPUTE: begin
-                    // acc = 0;
-                    // for (i = 0; i < K; i = i + 1) begin
-                    //     for (j = 0; j < K; j = j + 1) begin
-                    //         acc = acc + 
-                    //             matrix[y+i][x+j] * kernel[i][j];
-                    //     end
-                    // end
                     acc <= acc + matrix[y+i][x+j] * kernel[i][j];
                     if (i == K-1 & j == K-1) begin
                         i <= 0;
                         j <= 0;
-                        out_pixel <= acc;
+                        out_pixel <= acc + matrix[y+i][x+j] * kernel[i][j];
                         out_valid <= 1;
                         state <= NEXT;
                     end else if (j == K-1) begin
@@ -88,19 +93,20 @@ module convolution #(
                 // Move to next output pixel
                 NEXT: begin
                     out_valid <= 0;
+                    acc <= 0;
 
                     if (x < OUT_W - 1) begin
                         x <= x + 1;
+                        state <= COMPUTE;
                     end else begin
                         x <= 0;
                         if (y < OUT_H - 1) begin
                             y <= y + 1;
+                            state <= COMPUTE;
                         end else begin
                             state <= FINISHED;
                         end
                     end
-
-                    state <= (state == FINISHED) ? FINISHED : COMPUTE;
                 end
 
                 FINISHED: begin
