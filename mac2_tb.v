@@ -17,7 +17,7 @@ module mac2_tb;
         kernel = {8'd8, 8'd7, 8'd6, 8'd5};
         #10;
 
-        $finish;
+	$finish;
     end
 
 endmodule;
