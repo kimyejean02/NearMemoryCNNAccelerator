@@ -5,7 +5,7 @@ module tb_maxpool2;
     localparam DATA_WIDTH = 8;
 
     // 2×2 inputs
-    logic [DATA_WIDTH-1:0] in [0:1][0:1];
+    reg [DATA_WIDTH-1:0] in [0:1][0:1];
 
     wire [DATA_WIDTH-1:0] out;
 
@@ -16,10 +16,10 @@ module tb_maxpool2;
     );
 
     task apply_input(
-        input logic [DATA_WIDTH-1:0] a00,
-        input logic [DATA_WIDTH-1:0] a01,
-        input logic [DATA_WIDTH-1:0] a10,
-        input logic [DATA_WIDTH-1:0] a11
+        input reg [DATA_WIDTH-1:0] a00,
+        input reg [DATA_WIDTH-1:0] a01,
+        input reg [DATA_WIDTH-1:0] a10,
+        input reg [DATA_WIDTH-1:0] a11
     );
     begin
         in[0][0] = a00;

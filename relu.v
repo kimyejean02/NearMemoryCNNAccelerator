@@ -5,6 +5,6 @@ module relu #(
     output signed [DATA_WIDTH-1:0] out
 );
 
-    assign out = (in > 0) ? in : {DATA_WIDTH{1'b0}};
+    assign out = (in > 0) ? in : 0;
 
 endmodule
