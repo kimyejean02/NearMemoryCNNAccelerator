@@ -1,5 +1,6 @@
 module convolution #(
     parameter DATA_WIDTH = 8,
+    parameter K_WIDTH    = 8,
     parameter ACC_WIDTH  = 32,
     parameter HEIGHT     = 4,
     parameter WIDTH      = 4,
@@ -12,7 +13,7 @@ module convolution #(
     output reg  done,
 
     input  wire signed [DATA_WIDTH-1:0] matrix [0:HEIGHT-1][0:WIDTH-1],
-    input  wire signed [DATA_WIDTH-1:0] kernel [0:K-1][0:K-1],
+    input  wire signed [K_WIDTH-1:0] kernel [0:K-1][0:K-1],
 
     output reg signed [ACC_WIDTH-1:0] out_pixel,
     output reg                        out_valid
