@@ -19,10 +19,6 @@ module tb_convolution_with_mem;
     wire [7:0] address_bus;
     assign address_bus = (driving_mem)?my_address:8'bZ;
 
-    reg [31:0] my_data;
-    wire [31:0] data_bus;
-    assign data_bus = (driving_mem)?my_data:32'bZ;
-
     reg my_mem_sel;
     wire conv_mem_sel;
     wire mem_sel;
@@ -32,6 +28,10 @@ module tb_convolution_with_mem;
     wire mem_w_en;
     wire conv_mem_w_en;
     assign mem_w_en = (driving_mem)?my_mem_w_en:conv_mem_w_en;
+
+    reg [31:0] my_data;
+    wire [31:0] data_bus;
+    assign data_bus = (driving_mem && my_mem_w_en)?my_data:32'bZ;
 
     mem memory (
         .clk(clk),
@@ -109,7 +109,6 @@ module tb_convolution_with_mem;
         driving_mem <= 0;
         my_mem_sel <= 0;
         my_mem_w_en <= 0;
-        @(posedge clk);
 
         // Start convolution
         start <= 1;
@@ -123,7 +122,6 @@ module tb_convolution_with_mem;
         driving_mem <= 1;
         my_mem_sel <= 1;
         my_mem_w_en <= 0;
-        @(posedge clk);
 
         for (integer i=0; i<9; i++) begin
             my_address <= output_addr + i;

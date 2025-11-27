@@ -107,12 +107,11 @@ module convolution_with_mem #(
                 LOAD_MAT: begin 
                     matrix[i][j] <= data_bus;
                     address <= address + 1;
+
                     if (i == HEIGHT-1 && j == WIDTH-1) begin 
                         i <= 0;
                         j <= 0;
 
-                        mem_w <= 0;
-                        mem_sel <= 1;
                         address <= kernel_addr;
 
                         state <= LOAD_KERN;
