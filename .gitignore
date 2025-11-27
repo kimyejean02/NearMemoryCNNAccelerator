@@ -21,6 +21,7 @@ csrc/
 # Log file - the following switch allows to specify the file that will be
 # used to write all messages from simulation:  -l <filename>
 *.log
+.nfs*
 
 # Coverage results (generated with urg) and database location.  The
 # following switch can also be used:  urg -dir <coverage_directory>.vdb
@@ -37,3 +38,4 @@ vc_hdrs.h
 
 *.tcl*
 cmd_fl
+

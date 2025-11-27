@@ -45,7 +45,6 @@ module maxpool2_with_mem #(
         LOAD_INPUT,
         LOAD_WINDOW,
         COMPUTE,
-        WRITE_OUTPUT,
         NEXT,
         FINISHED
     } state_t;
@@ -53,7 +52,7 @@ module maxpool2_with_mem #(
     state_t state;
 
     wire driving_mem;
-    assign driving_mem = (state == LOAD_INPUT) || (state == WRITE_OUTPUT);
+    assign driving_mem = (state == LOAD_INPUT) || (state == NEXT);
 
     reg [ADDR_WIDTH-1:0] address;
     assign address_bus = (driving_mem) ? address : {ADDR_WIDTH{1'bZ}};
@@ -155,20 +154,22 @@ module maxpool2_with_mem #(
                     if (i == POOL_SIZE-1 && j == POOL_SIZE-1) begin
                         i <= 0;
                         j <= 0;
-                        state <= WRITE_OUTPUT;
+
+                        // Final comparison: use the larger of max_val and current element
+                        if (pool_window[i][j] > max_val) begin
+                            data <= {{(DATABUS_WIDTH-DATA_WIDTH){1'b0}}, pool_window[i][j]};
+                        end else begin
+                            data <= {{(DATABUS_WIDTH-DATA_WIDTH){1'b0}}, max_val};
+                        end
+                        mem_sel <= 1;
+
+                        state <= NEXT;
                     end else if (j == POOL_SIZE-1) begin
                         i <= i + 1;
                         j <= 0;
                     end else begin
                         j <= j + 1;
                     end
-                end
-
-                // Write output to memory
-                WRITE_OUTPUT: begin
-                    data <= {{(DATABUS_WIDTH-DATA_WIDTH){1'b0}}, max_val};
-                    mem_sel <= 1;
-                    state <= NEXT;
                 end
 
                 // Move to next output pixel
