@@ -7,7 +7,7 @@ module mem
     input wire clk,
     input wire w_en,
     input wire sel,
-    input wire [ADDRESS_WIDTH-1:0] address_bus,
+    inout wire [ADDRESS_WIDTH-1:0] address_bus,
     inout wire [DATA_WIDTH-1:0] data_bus
 );
     reg [DATA_WIDTH-1:0] memory [(2**ADDRESS_WIDTH)-1:0];

@@ -1,3 +1,5 @@
+`timescale 1ns/1ps
+
 module tb_mem;
     reg clk;
     reg cs;
@@ -26,13 +28,13 @@ module tb_mem;
 
         for (integer i=0; i<2**8; i=i+1) begin 
             addr <= i; w_en <= 1; cs <= 1; tb_data <= $urandom;
-            repeat(1) @(posedge clk)
+            @(posedge clk);
             $display("Writing %0d to %0d", tb_data, addr);
         end
 
         for (integer i=0; i<2**8; i=i+1) begin 
             addr <= i; w_en <= 0; cs <= 1;
-            repeat(2) @(posedge clk) ;
+            @(posedge clk) ;
             $display("Reading %0d from %0d", data_bus, addr);
         end
 
