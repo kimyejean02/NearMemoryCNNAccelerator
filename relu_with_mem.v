@@ -134,11 +134,13 @@ module relu_with_mem #(
                         data <= {DATABUS_WIDTH{1'b0}};
                     end
                     mem_w <= 1;    // drive data_bus this cycle to perform write
+                    mem_sel <= 1;
                     state <= NEXT;
                 end
                 // move to next element and increment output address
                 NEXT: begin
                     mem_w <= 0;
+                    mem_sel <= 0;
                     // increment address to next output location
                     address <= address + 1;
 
