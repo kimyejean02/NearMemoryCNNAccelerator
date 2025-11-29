@@ -123,15 +123,17 @@ module relu_with_mem #(
                 // Compute ReLU over current window element (element-wise)
                 COMPUTE: begin
                     // Apply ReLU to matrix[y][x]
-                    if (matrix[y][x] > 0)
+                    // Apply ReLU to matrix[y][x] and write result
+                    if (matrix[y][x] > 0) begin
                         result[y][x] <= matrix[y][x];
-                    else
+                        // write matrix[y][x] to data bus (sign-extended to DATABUS_WIDTH)
+                        data <= {{(DATABUS_WIDTH-DATA_WIDTH){matrix[y][x][DATA_WIDTH-1]}}, matrix[y][x]};
+                    end else begin
                         result[y][x] <= 0;
-
-                    // prepare data and initiate write in this same state
-                    data <= {{(DATABUS_WIDTH-DATA_WIDTH){result[y][x][DATA_WIDTH-1]}}, result[y][x]};
+                        // write 0 to data bus
+                        data <= {DATABUS_WIDTH{1'b0}};
+                    end
                     mem_w <= 1;    // drive data_bus this cycle to perform write
-
                     state <= NEXT;
                 end
                 // move to next element and increment output address
