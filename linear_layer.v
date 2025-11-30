@@ -49,7 +49,7 @@ module linear_layer #(
                     if (start) begin
                         i     <= 0;
                         j     <= 0;
-                        acc   <= b[0];
+                        acc   <= bias[0];
                         state <= COMPUTE;
                     end
                 end
