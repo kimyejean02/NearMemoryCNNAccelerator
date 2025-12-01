@@ -42,12 +42,12 @@ module nmcu #(
     // - layer input width [5:2] (0 - 15)
     // - layer input height [9:6] (0 - 15)
     // - kernel size [12:10] (0 - 7) (only for conv)
-    // - weights_addr [31:16] (16 bit address) (only for conv)
+    // - kernel_addr [31:16] (16 bit address) (only for conv)
 
     // Stages:
     // - read in all descriptors from global mem
     // - read in all relevant inputs to local mem
-    // - read in all relevant kernels 
+    // - run loop over each descriptor, read in all relevant kernels 
     // - run loop over each descriptor, doing each operation
     // - if output dim is one, stop
     // - if we run out of descriptors, stop
@@ -74,16 +74,11 @@ module nmcu #(
     // descriptors and curr_desc
     reg [31:0] descriptors [0:MAX_DESCS-1];
     reg [31:0] curr_desc;
-    wire [1:0] layer_type;
-    assign layer_type = curr_desc[1:0];
-    wire [3:0] inp_width;
-    assign inp_width = curr_desc[5:2];
-    wire [3:0] inp_height;
-    assign inp_height = curr_desc[9:6];
-    wire [2:0] kernel_size;
-    assign kernel_size = curr_desc[12:10];
-    wire [15:0] weights_addr;
-    assign weights_addr = curr_desc[31:16];
+    wire [1:0] layer_type = curr_desc[1:0];
+    wire [3:0] inp_width = curr_desc[5:2];
+    wire [3:0] inp_height = curr_desc[9:6];
+    wire [2:0] kernel_size = curr_desc[12:10];
+    wire [15:0] kernel_addr = curr_desc[31:16];
 
     // descriptor iterator
     reg [$clog2(MAX_DESCS)-1:0] i;
@@ -96,8 +91,36 @@ module nmcu #(
     assign address_bus = mem_sel ? address : {ADDR_WIDTH{1'bZ}};
 
     // local inputs
-    reg [DATABUS_WIDTH-1:0] local_kernels [0:MAX_KERNEL_DIM-1][0:MAX_KERNEL_DIM-1][0:MAX_DESCS-1];
-    reg [DATABUS_WIDTH-1:0] local_activations [0:MAX_INPUT_DIM-1][0:MAX_INPUT_DIM-1][0:MAX_DESCS-1];
+    reg [DATABUS_WIDTH-1:0] local_kernels [0:MAX_DESCS-1][0:MAX_KERNEL_DIM-1][0:MAX_KERNEL_DIM-1];
+    reg [DATABUS_WIDTH-1:0] local_activations [0:MAX_DESCS-1][0:MAX_INPUT_DIM-1][0:MAX_INPUT_DIM-1];
+
+    // conv processing element
+    reg conv_pe_rst;
+    reg conv_pe_start;
+    wire conv_pe_done;
+    wire [$clog2(MAX_INPUT_DIM)-1:0] conv_pe_input_width;
+    wire [$clog2(MAX_INPUT_DIM)-1:0] conv_pe_input_height;
+    wire [$clog2(MAX_INPUT_DIM)-1:0] conv_pe_kernel_size;
+    wire [DATABUS_WIDTH-1:0] conv_pe_local_kernel [0:MAX_KERNEL_DIM-1][0:MAX_KERNEL_DIM-1];
+    wire [DATABUS_WIDTH-1:0] conv_pe_local_activation_in [0:MAX_INPUT_DIM-1][0:MAX_INPUT_DIM-1];
+    wire [DATABUS_WIDTH-1:0] conv_pe_local_activation_out [0:MAX_INPUT_DIM-1][0:MAX_INPUT_DIM-1];
+
+    conv_for_nmcu #(
+        .MAX_INPUT_DIM(MAX_INPUT_DIM),
+        .MAX_KERNEL_DIM(MAX_KERNEL_DIM),
+        .DATABUS_WIDTH(DATABUS_WIDTH)
+    ) conv_pe (
+        .clk(clk),
+        .rst(conv_pe_rst),
+        .start(conv_pe_start),
+        .done(conv_pe_done),
+        .input_width(conv_pe_input_width),
+        .input_height(conv_pe_input_height),
+        .kernel_size(conv_pe_kernel_size),
+        .local_kernel(conv_pe_local_kernel),
+        .local_activation_in(conv_pe_local_activation_in),
+        .local_activation_out(conv_pe_local_activation_out)
+    );
 
     always @(posedge clk or posedge rst) begin 
         if (rst) begin
@@ -127,9 +150,8 @@ module nmcu #(
                     READ_DESCS: begin 
                         mem_sel <= 1;
                         mem_w <= 0;
-                        if (ready ) begin 
+                        if (ready) begin 
                             descriptors[i] <= data_bus;
-                            i <= i + 1;
                             stall <= 1;
                             if (i == MAX_DESCS-1) begin
                                 curr_desc <= descriptors[0];
@@ -137,8 +159,42 @@ module nmcu #(
                                 address <= input_addr;
                             end else begin
                                 address <= address + 1;
+                                i <= i + 1;
                             end
                         end
+                    end
+
+                    READ_INPUTS: begin 
+                        mem_sel <= 1;
+                        mem_w <= 0;
+                        if (ready) begin
+                            local_activations[0][i][j] <= data_bus;
+                            stall <= 1;
+
+                            if (i == inp_height - 1 && j == inp_width - 1) begin
+                                i <= 0;
+                                j <= 0;
+
+                                mem_sel <= 0;
+                                mem_w <= 0;
+
+                                state <= READ_KERNELS;
+                            end else if (j == inp_width - 1) begin
+                                i <= i+1;
+                                j <= 0;
+                                
+                                // go back to first elem in row, then go to
+                                // next row entirely
+                                address <= address - j + full_input_width;
+                            end else begin 
+                                j <= j+1;
+                                address <= address + 1;
+                            end
+                        end
+                    end
+
+                    READ_KERNELS: begin 
+                        
                     end
 
                     INIT: begin 
@@ -148,6 +204,7 @@ module nmcu #(
                     end
 
                     CONV: begin 
+
                     end
 
                     MAXP: begin 
