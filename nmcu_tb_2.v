@@ -22,7 +22,6 @@ module tb_nmcu_2;
 
     // NMCU signals
     reg [NUM_NMCUS-1:0] start;
-    wire [NUM_NMCUS-1:0] read_complete;
     wire [NUM_NMCUS-1:0] done;
     reg [ADDR_WIDTH-1:0] nmcu_desc;
     reg [ADDR_WIDTH-1:0] input_addresses [OUTPUT_DIM][OUTPUT_DIM];
@@ -32,15 +31,17 @@ module tb_nmcu_2;
     reg [$clog2(MAX_INPUT_DIM):0] full_output_width;
     reg [$clog2(MAX_INPUT_DIM):0] full_output_height;
 
-    wire [NUM_NMCUS-1:0] mem_w_ind;
-    wire [NUM_NMCUS-1:0] mem_sel_ind;
-
-    wire mem_w = mem_w_ind[0] || mem_w_ind[1] || mem_w_ind[2] || mem_w_ind[3] || mem_w_ind[4] || mem_w_ind[5] || mem_w_ind[6] || mem_w_ind[7] || mem_w_ind[8];
-    wire mem_sel = mem_sel_ind[0] || mem_sel_ind[1] || mem_sel_ind[2] || mem_sel_ind[3] || mem_sel_ind[4] || mem_sel_ind[5] || mem_sel_ind[6] || mem_sel_ind[7] || mem_sel_ind[8];
-
     wire [ADDR_WIDTH-1:0] address_bus;
     wire [DATABUS_WIDTH-1:0] data_bus;
+    wire mem_w;
+    wire mem_sel;
     wire ready;
+
+    wire [ADDR_WIDTH-1:0] addr_bus_ind [NUM_NMCUS-1:0];
+    wire [DATABUS_WIDTH-1:0] data_bus_ind [NUM_NMCUS-1:0];
+    wire [NUM_NMCUS-1:0] mem_w_ind;
+    wire [NUM_NMCUS-1:0] mem_sel_ind;
+    wire [NUM_NMCUS-1:0] mem_ready_ind;
 
     // Instantiate NMCUs
     genvar i, j;
@@ -57,7 +58,6 @@ module tb_nmcu_2;
                     .clk(clk),
                     .rst(rst),
                     .start(start[i*OUTPUT_DIM+j]),
-                    .read_complete(read_complete[i*OUTPUT_DIM+j]),
                     .done(done[i*OUTPUT_DIM+j]),
                     .nmcu_desc(nmcu_desc),
                     .input_addr(input_addresses[i][j]),
@@ -68,9 +68,9 @@ module tb_nmcu_2;
                     .full_output_height(full_output_height),
                     .mem_w(mem_w_ind[i*OUTPUT_DIM+j]),
                     .mem_sel(mem_sel_ind[i*OUTPUT_DIM+j]),
-                    .address_bus(address_bus),
-                    .data_bus(data_bus),
-                    .ready(ready)
+                    .address_bus(address_bus_ind[i*OUTPUT_DIM+j]),
+                    .data_bus(data_bus_ind[i*OUTPUT_DIM+j]),
+                    .ready(mem_ready_ind[i*OUTPUT_DIM+j])
                 );
             end
         end
@@ -88,6 +88,26 @@ module tb_nmcu_2;
         .address_bus(address_bus),
         .data_bus(data_bus),
         .ready(ready)
+    );
+
+    // Instantiate memory interface
+    mem_interface #(
+        .NUM_PORTS(NUM_NMCUS),
+        .ADDR_WIDTH(ADDR_WIDTH),
+        .DATABUS_WIDTH(DATABUS_WIDTH)
+    ) mem_cu (
+        .clk(clk),
+        .rst(rst),
+        .mem_w_ind(mem_w_ind),
+        .mem_sel_ind(mem_sel_ind),
+        .mem_ready_ind(mem_ready_ind),
+        .addr_bus_ind(addr_bus_ind),
+        .data_bus_ind(data_bus_ind),
+        .mem_w(mem_w),
+        .mem_sel(mem_sel),
+        .mem_ready(ready),
+        .addr_bus(addr_bus),
+        .data_bus(data_bus)
     );
 
     // Clock generation
@@ -200,19 +220,8 @@ module tb_nmcu_2;
             end
         end
 
-        // Start each NMCU only after the previous one completes its read phase
-        for (i = 0; i < NUM_NMCUS; i = i + 1) begin
-            // pulse start bit for this NMCU
-            start = (1 << i);
-            #10;
-            start = 0;
-
-            // wait for this NMCU's read_complete
-            wait (read_complete[i] == 1'b1);
-
-            // optional: small delay for safety
-            #10;
-        end
+        // All 1s
+        start = 9'b111111111;
 
         // Wait until done
         wait(done[0] && done[1] && done[2] && done[3] && done[4] && done[5] && done[6] && done[7] && done[8]);
@@ -220,9 +229,9 @@ module tb_nmcu_2;
 
         // Print output memory (assuming output at 0x0200)
         $display("Output memory:");
-        for (int i=0; i<2; i=i+1) begin
-            for (int j=0; j<2; j=j+1) begin
-                $write("%0d ", $signed(memory.memory[16'h0200 + i*2 + j]));
+        for (int i=0; i<3; i=i+1) begin
+            for (int j=0; j<3; j=j+1) begin
+                $write("%0d ", $signed(memory.memory[16'h0200 + i*3 + j]));
             end
             $write("\n");
         end

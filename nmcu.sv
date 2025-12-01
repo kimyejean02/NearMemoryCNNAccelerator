@@ -10,7 +10,6 @@ module nmcu #(
     input wire rst,
 
     input wire start,
-    output wire read_complete,
     output reg done,
 
     input wire [ADDR_WIDTH-1:0] nmcu_desc, // memory loc containing full description of NMCU network
@@ -80,8 +79,6 @@ module nmcu #(
 
     state_t state;
 
-    assign read_complete = (state > READ_KERNELS);
-    
     // descriptor stuff
     reg [31:0] descriptors [0:MAX_DESCS-1];
     reg [$clog2(MAX_DESCS):0] desc_iter;
