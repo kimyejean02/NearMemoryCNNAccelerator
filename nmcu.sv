@@ -79,9 +79,10 @@ module nmcu #(
 
     state_t state;
     
-    // descriptors and curr_desc
+    // descriptor stuff
     reg [31:0] descriptors [0:MAX_DESCS-1];
     reg [$clog2(MAX_DESCS):0] desc_iter;
+
     wire [31:0] curr_desc = descriptors[desc_iter];
     wire [1:0] layer_type = curr_desc[1:0];
     wire [3:0] inp_width = curr_desc[5:2];
@@ -89,13 +90,20 @@ module nmcu #(
     wire [2:0] kernel_size = curr_desc[12:10];
     wire [15:0] kernel_addr = curr_desc[31:16];
 
+    wire [31:0] next_desc = descriptors[desc_iter+1];
+    wire [1:0] next_layer_type = next_desc[1:0];
+    wire [3:0] next_inp_width = next_desc[5:2];
+    wire [3:0] next_inp_height = next_desc[9:6];
+    wire [2:0] next_kernel_size = next_desc[12:10];
+    wire [15:0] next_kernel_addr = next_desc[31:16];
+
     // input iterators
     reg [$clog2(MAX_INPUT_DIM)-1:0] x, y;
     // kernel iterators
     reg [$clog2(MAX_KERNEL_DIM)-1:0] i, j;
 
     // stall reg for memory read
-    reg stall;
+    reg mem_stall;
 
     // address reg
     reg [ADDR_WIDTH-1:0] address;
@@ -139,6 +147,18 @@ module nmcu #(
         .local_activation_out(conv_pe_local_activation_out)
     );
 
+    // maxpool processing element
+    reg [DATABUS_WIDTH-1:0] maxp_pe_in [0:1][0:1];
+    wire [DATABUS_WIDTH-1:0] maxp_pe_out;
+    reg maxp_stall;
+
+    maxpool2 #(
+        .DATA_WIDTH(DATABUS_WIDTH)
+    ) maxp_pe (
+        .in(maxp_pe_in),
+        .out(maxp_pe_out)
+    );
+
     initial begin 
         state <= IDLE;
         desc_iter <= 0;
@@ -148,7 +168,7 @@ module nmcu #(
         j <= 0;
         mem_sel <= 0;
         mem_w <= 0;
-        stall <= 0;
+        mem_stall <= 0;
         address <= 0;
         data <= 0;
         local_activation_inp_ind <= 0;
@@ -156,6 +176,8 @@ module nmcu #(
 
         conv_pe_rst <= 0;
         conv_pe_start <= 0;
+
+        maxp_stall <= 0;
     end
 
     always @(posedge clk or posedge rst) begin 
@@ -168,7 +190,7 @@ module nmcu #(
             j <= 0;
             mem_sel <= 0;
             mem_w <= 0;
-            stall <= 0;
+            mem_stall <= 0;
             address <= 0;
             data <= 0;
             local_activation_inp_ind <= 0;
@@ -176,11 +198,13 @@ module nmcu #(
 
             conv_pe_rst <= 0;
             conv_pe_start <= 0;
+
+            maxp_stall <= 0;
        end else begin
-            if (stall) begin 
+            if (mem_stall) begin 
                 mem_sel <= 0;
                 mem_w <= 0;
-                stall <= 0;
+                mem_stall <= 0;
             end else begin
                 case (state)
                     IDLE: begin 
@@ -199,7 +223,7 @@ module nmcu #(
                         mem_w <= 0;
                         if (ready) begin 
                             descriptors[desc_iter] <= data_bus;
-                            stall <= 1;
+                            mem_stall <= 1;
                             if (desc_iter == MAX_DESCS-1 || data_bus[1:0] == NOP_TYPE) begin
                                 state <= READ_INPUTS;
                                 desc_iter <= 0;
@@ -216,7 +240,7 @@ module nmcu #(
                         mem_w <= 0;
                         if (ready) begin
                             local_activations[local_activation_inp_ind][x][y] <= data_bus;
-                            stall <= 1;
+                            mem_stall <= 1;
 
                             if (x == inp_height - 1 && y == inp_width - 1) begin
                                 x <= 0;
@@ -249,7 +273,7 @@ module nmcu #(
                             
                             if (ready) begin
                                 local_kernels[desc_iter][i][j] <= data_bus;
-                                stall <= 1;
+                                mem_stall <= 1;
 
                                 if (i == kernel_size - 1 && j == kernel_size - 1) begin 
                                     i <= 0;
@@ -279,12 +303,12 @@ module nmcu #(
                             desc_iter <= 0;
                             mem_sel <= 0;
                             mem_w <= 0;
+                            x <= 0;
+                            y <= 0;
                             case (descriptors[0][1:0])
                                 NOP_TYPE: begin 
                                     state <= NOP;
                                     address <= output_addr;
-                                    x <= 0;
-                                    y <= 0;
                                 end
                                 CONV_TYPE: state <= CONV;
                                 MAXP_TYPE: state <= MAXP;
@@ -300,15 +324,15 @@ module nmcu #(
                         // writeback here
                         mem_sel <= 1;
                         mem_w <= 1;
-                        data <= local_activations[~local_activation_inp_ind][x][y];
+                        data <= local_activations[local_activation_inp_ind][x][y];
 
                         if (ready) begin 
-                            stall <= 1;
-                            if (x == full_output_height - 1 && y == full_output_width - 1) begin 
+                            mem_stall <= 1;
+                            if (x == inp_height - 1 && y == inp_width - 1) begin 
                                 x <= 0;
                                 y <= 0;
                                 state <= FINISHED;
-                            end else if (y == full_output_width - 1) begin 
+                            end else if (y == inp_width - 1) begin 
                                 x <= x + 1;
                                 y <= 0;
 
@@ -355,13 +379,13 @@ module nmcu #(
                                 local_activation_inp_ind <= ~local_activation_inp_ind;
 
                                 desc_iter <= desc_iter + 1;
+                                x <= 0;
+                                y <= 0;
 
-                                case (descriptors[desc_iter][1:0])
+                                case (next_layer_type)
                                     NOP_TYPE: begin 
                                         state <= NOP;
                                         address <= output_addr;
-                                        x <= 0;
-                                        y <= 0;
                                     end
                                     CONV_TYPE: state <= CONV;
                                     MAXP_TYPE: state <= MAXP;
@@ -372,7 +396,41 @@ module nmcu #(
                     end
 
                     MAXP: begin 
-                        
+                        if (maxp_stall == 0) begin
+                            maxp_pe_in[0][0] <= local_activations[local_activation_inp_ind][x << 1][y << 1];
+                            maxp_pe_in[0][1] <= local_activations[local_activation_inp_ind][x << 1][(y << 1) + 1];
+                            maxp_pe_in[1][0] <= local_activations[local_activation_inp_ind][(x << 1) + 1][y << 1];
+                            maxp_pe_in[1][1] <= local_activations[local_activation_inp_ind][(x << 1) + 1][(y << 1) + 1];
+
+                            maxp_stall <= 1;
+                        end else begin
+                            local_activations[~local_activation_inp_ind][x][y] <= maxp_pe_out;
+                            maxp_stall <= 0;
+
+                            // next_inp; i.e. output
+                            if (x == next_inp_height - 1 && y == next_inp_width - 1) begin 
+                                local_activation_inp_ind <= ~local_activation_inp_ind;
+
+                                desc_iter <= desc_iter + 1;
+                                x <= 0;
+                                y <= 0;
+
+                                case (next_layer_type)
+                                    NOP_TYPE: begin 
+                                        state <= NOP;
+                                        address <= output_addr;
+                                    end
+                                    CONV_TYPE: state <= CONV;
+                                    MAXP_TYPE: state <= MAXP;
+                                    RELU_TYPE: state <= RELU;
+                                endcase
+                            end else if (y == next_inp_width - 1) begin 
+                                x <= x + 1;
+                                y <= 0;
+                            end else begin 
+                                y <= y + 1;
+                            end
+                        end
                     end
 
                     RELU: begin 

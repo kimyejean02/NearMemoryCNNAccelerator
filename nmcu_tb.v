@@ -92,7 +92,9 @@ module tb_nmcu;
 
         // Load descriptors into memory (for simplicity directly in memory array)
         memory.memory[0] = {16'h1234, 3'b000, 3'b011, 4'b0100, 4'b0100, 2'b01}; // CONV, input 4x4, kernel 3x3, kernel addr 0x1234
-        memory.memory[1] = 32'h00000000; // NOP
+        memory.memory[1] = {16'h0000, 3'b000, 3'b000, 4'b0010, 4'b0010, 2'b10}; // MAXP
+        memory.memory[2] = {16'h0000, 3'b000, 3'b000, 4'b0001, 4'b0001, 2'b00}; // NOP (specify the output size that's not the full output size here)
+        
         // Load kernel data
         for (int i=0; i<3; i=i+1) begin
             for (int j=0; j<3; j=j+1) begin
