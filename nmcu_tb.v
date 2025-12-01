@@ -36,7 +36,7 @@ module tb_nmcu;
         .MAX_DESCS(MAX_DESCS),
         .MAX_INPUT_DIM(MAX_INPUT_DIM),
         .MAX_KERNEL_DIM(MAX_KERNEL_DIM)
-    ) uut (
+    ) dut (
         .clk(clk),
         .rst(rst),
         .start(start),
