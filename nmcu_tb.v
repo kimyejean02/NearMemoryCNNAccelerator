@@ -75,6 +75,9 @@ module tb_nmcu;
 
     // Test procedure
     initial begin
+        integer i, j;
+        integer val;
+
         // Initialize signals
         rst = 1;
         start = 0;
@@ -92,19 +95,63 @@ module tb_nmcu;
 
         // Load descriptors into memory (for simplicity directly in memory array)
         memory.memory[0] = {16'h1234, 3'b000, 3'b011, 4'b0100, 4'b0100, 2'b01}; // CONV, input 4x4, kernel 3x3, kernel addr 0x1234
-        memory.memory[1] = {16'h0000, 3'b000, 3'b000, 4'b0010, 4'b0010, 2'b10}; // MAXP
-        memory.memory[2] = {16'h0000, 3'b000, 3'b000, 4'b0001, 4'b0001, 2'b00}; // NOP (specify the output size that's not the full output size here)
+        // 9  -13
+        // -25 29
         
-        // Load kernel data
-        for (int i=0; i<3; i=i+1) begin
-            for (int j=0; j<3; j=j+1) begin
-                memory.memory[16'h1234 + i*3 + j] = i*3 + j + 1; // kernel values 1..9
+        memory.memory[1] = {16'h0000, 3'b000, 3'b000, 4'b0010, 4'b0010, 2'b11}; // RELU, input 2x2
+        // 9 0 
+        // 0 29
+
+        memory.memory[2] = {16'h0000, 3'b000, 3'b000, 4'b0010, 4'b0010, 2'b10}; // MAXP, input 2x2
+        // 29
+
+        memory.memory[3] = {16'h0000, 3'b000, 3'b000, 4'b0001, 4'b0001, 2'b00}; // NOP, input 1x1 (specify the output size that's not the full output size here)
+        
+        // Load kernel data (3x3 kernel, guaranteed mixed output)
+        //
+        // |     | j=0 | j=1 | j=2 |
+        // | --- | --- | --- | --- |
+        // | i=0 |  1  | -1  |  2  |
+        // | i=1 | -2  |  3  | -1  |
+        // | i=2 |  1  |  0  |  1  |
+        for (i = 0; i < 3; i = i + 1) begin
+            for (j = 0; j < 3; j = j + 1) begin
+                case ({i,j})
+                    6'b000_00: val =  1;
+                    6'b000_01: val = -1;
+                    6'b000_10: val =  2;
+                    6'b001_00: val = -2;
+                    6'b001_01: val =  3;
+                    6'b001_10: val = -1;
+                    6'b010_00: val =  1;
+                    6'b010_01: val =  0;
+                    6'b010_10: val =  1;
+                    default:   val = 0;
+                endcase
+
+                memory.memory[16'h1234 + i*3 + j] = val;
+
+                $display("KERNEL write @ %h = %0d (i=%0d j=%0d)",
+                        16'h1234 + i*3 + j,
+                        val,
+                        i,
+                        j);
             end
         end
-        // Load input data
-        for (int i=0; i<4; i=i+1) begin
-            for (int j=0; j<4; j=j+1) begin
-                memory.memory[16'h0100 + i*4 + j] = i*4 + j + 1; // input values 1..16
+
+        // Load input data (4x4) with mixed positives and negatives
+        for (i = 0; i < 4; i = i + 1) begin
+            for (j = 0; j < 4; j = j + 1) begin
+                // alternate positive and negative values
+                val = ((i + j) % 2 == 0) ? i*4 + j + 1 : -(i*4 + j + 1);
+
+                memory.memory[16'h0100 + i*4 + j] = val;
+
+                $display("INPUT  write @ %h = %0d (i=%0d j=%0d)",
+                        16'h0100 + i*4 + j,
+                        val,
+                        i,
+                        j);
             end
         end
 
@@ -122,12 +169,12 @@ module tb_nmcu;
         $display("Output memory:");
         for (int i=0; i<2; i=i+1) begin
             for (int j=0; j<2; j=j+1) begin
-                $write("%0d ", memory.memory[16'h0200 + i*2 + j]);
+                $write("%0d ", $signed(memory.memory[16'h0200 + i*2 + j]));
             end
             $write("\n");
         end
 
-        $stop;
+        $finish;
     end
 
 endmodule

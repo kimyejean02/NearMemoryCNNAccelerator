@@ -159,6 +159,31 @@ module nmcu #(
         .out(maxp_pe_out)
     );
 
+    // relu processing element
+    wire [DATABUS_WIDTH-1:0] relu_out [0:1][0:MAX_INPUT_DIM-1][0:MAX_INPUT_DIM-1];
+
+    genvar k;
+    genvar l;
+    generate
+        for (k = 0; k < MAX_INPUT_DIM; k = k+1) begin 
+            for (l = 0; l < MAX_INPUT_DIM; l = l+1) begin 
+                relu #(
+                    .DATA_WIDTH(DATABUS_WIDTH)
+                ) relu_pe0 (
+                    .in(local_activations[0][k][l]),
+                    .out(relu_out[0][k][l])
+                );
+
+                relu #(
+                    .DATA_WIDTH(DATABUS_WIDTH)
+                ) relu_pe1 (
+                    .in(local_activations[1][k][l]),
+                    .out(relu_out[1][k][l])
+                );
+            end
+        end
+    endgenerate
+
     initial begin 
         state <= IDLE;
         desc_iter <= 0;
@@ -434,6 +459,19 @@ module nmcu #(
                     end
 
                     RELU: begin 
+                        local_activations[~local_activation_inp_ind] <= relu_out[local_activation_inp_ind];
+                        local_activation_inp_ind <= ~local_activation_inp_ind;
+                        desc_iter <= desc_iter + 1;
+
+                        case (next_layer_type)
+                            NOP_TYPE: begin 
+                                state <= NOP;
+                                address <= output_addr;
+                            end
+                            CONV_TYPE: state <= CONV;
+                            MAXP_TYPE: state <= MAXP;
+                            RELU_TYPE: state <= RELU;
+                        endcase
                     end
 
                     FINISHED: begin 
