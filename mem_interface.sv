@@ -2,7 +2,7 @@ module #(
     parameter NUM_PORTS = 9,
     parameter ADDR_WIDTH = 16,
     parameter DATABUS_WIDTH = 32
-) mem_serializer (
+) mem_interface (
     input wire clk,
 
     input wire [NUM_PORTS-1:0] mem_w_ind,
@@ -19,7 +19,10 @@ module #(
     output wire [ADDR_WIDTH-1:0] addr_bus,
     inout wire [DATABUS_WIDTH-1:0] data_bus
 );
-
     
+
+    always @(posedge clk) begin 
+        
+    end
 
 endmodule
