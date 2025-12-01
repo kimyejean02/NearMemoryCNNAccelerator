@@ -42,6 +42,7 @@ module mem_interface #(
                 end
                 mem_ready_ind[i] <= mem_ready;
             end else begin 
+                mem_ready_ind[i] <= 1'b0;
                 i <= (i + 1) % NUM_PORTS;
             end
         end

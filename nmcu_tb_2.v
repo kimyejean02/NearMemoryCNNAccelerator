@@ -68,7 +68,7 @@ module tb_nmcu_2;
                     .full_output_height(full_output_height),
                     .mem_w(mem_w_ind[i*OUTPUT_DIM+j]),
                     .mem_sel(mem_sel_ind[i*OUTPUT_DIM+j]),
-                    .address_bus(address_bus_ind[i*OUTPUT_DIM+j]),
+                    .address_bus(addr_bus_ind[i*OUTPUT_DIM+j]),
                     .data_bus(data_bus_ind[i*OUTPUT_DIM+j]),
                     .ready(mem_ready_ind[i*OUTPUT_DIM+j])
                 );
@@ -106,7 +106,7 @@ module tb_nmcu_2;
         .mem_w(mem_w),
         .mem_sel(mem_sel),
         .mem_ready(ready),
-        .addr_bus(addr_bus),
+        .addr_bus(address_bus),
         .data_bus(data_bus)
     );
 
