@@ -25,7 +25,7 @@ module nmcu #(
     output reg mem_w,
     output reg mem_sel,
 
-    inout wire [ADDR_WIDTH-1:0] address_bus,
+    output wire [ADDR_WIDTH-1:0] address_bus,
     inout wire [DATABUS_WIDTH-1:0] data_bus,
     input wire ready
 );
