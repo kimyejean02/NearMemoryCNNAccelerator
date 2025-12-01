@@ -66,7 +66,7 @@ module nmcu #(
         NOP,
         CONV,
         MAXP,
-        RELU,
+        RELU
     } state_t;
 
     typedef enum logic [1:0] {
@@ -117,22 +117,22 @@ module nmcu #(
     wire [DATABUS_WIDTH-1:0] conv_pe_local_activation_in [0:MAX_INPUT_DIM-1][0:MAX_INPUT_DIM-1];
     wire [DATABUS_WIDTH-1:0] conv_pe_local_activation_out [0:MAX_INPUT_DIM-1][0:MAX_INPUT_DIM-1];
 
-    conv_for_nmcu #(
-        .MAX_INPUT_DIM(MAX_INPUT_DIM),
-        .MAX_KERNEL_DIM(MAX_KERNEL_DIM),
-        .DATABUS_WIDTH(DATABUS_WIDTH)
-    ) conv_pe (
-        .clk(clk),
-        .rst(conv_pe_rst),
-        .start(conv_pe_start),
-        .done(conv_pe_done),
-        .input_width(conv_pe_input_width),
-        .input_height(conv_pe_input_height),
-        .kernel_size(conv_pe_kernel_size),
-        .local_kernel(conv_pe_local_kernel),
-        .local_activation_in(conv_pe_local_activation_in),
-        .local_activation_out(conv_pe_local_activation_out)
-    );
+    // conv_for_nmcu #(
+    //     .MAX_INPUT_DIM(MAX_INPUT_DIM),
+    //     .MAX_KERNEL_DIM(MAX_KERNEL_DIM),
+    //     .DATABUS_WIDTH(DATABUS_WIDTH)
+    // ) conv_pe (
+    //     .clk(clk),
+    //     .rst(conv_pe_rst),
+    //     .start(conv_pe_start),
+    //     .done(conv_pe_done),
+    //     .input_width(conv_pe_input_width),
+    //     .input_height(conv_pe_input_height),
+    //     .kernel_size(conv_pe_kernel_size),
+    //     .local_kernel(conv_pe_local_kernel),
+    //     .local_activation_in(conv_pe_local_activation_in),
+    //     .local_activation_out(conv_pe_local_activation_out)
+    // );
 
     initial begin 
         state <= IDLE;
@@ -187,7 +187,7 @@ module nmcu #(
                         if (ready) begin 
                             descriptors[desc_iter] <= data_bus;
                             stall <= 1;
-                            if (desc_iter == MAX_DESCS-1) begin
+                            if (desc_iter == MAX_DESCS-1 || data_bus[1:0] == NOP_TYPE) begin
                                 state <= READ_INPUTS;
                                 desc_iter <= 0;
                                 address <= input_addr;
@@ -244,6 +244,8 @@ module nmcu #(
 
                                     mem_sel <= 0;
                                     mem_w <= 0;
+                                    
+                                    desc_iter <= desc_iter + 1;
                                 end else if (j == kernel_size - 1) begin 
                                     i <= i + 1;
                                     j <= 0;
@@ -268,7 +270,7 @@ module nmcu #(
                                 MAXP_TYPE: state <= MAXP;
                                 RELU_TYPE: state <= RELU;
                             endcase
-                        end else begin 
+                        end else if (layer_type != CONV_TYPE) begin 
                             desc_iter <= desc_iter + 1;
                             address <= descriptors[desc_iter+1][31:16]; // next kernel address
                         end
