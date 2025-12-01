@@ -58,7 +58,7 @@ module nmcu #(
     // extract the matrices we need to process (since they won't
     // be in row-major order)
 
-    typedef enum logic [2:0] {
+    typedef enum logic [3:0] {
         IDLE,
         READ_DESCS,
         READ_INPUTS,
@@ -66,7 +66,8 @@ module nmcu #(
         NOP,
         CONV,
         MAXP,
-        RELU
+        RELU,
+        FINISHED
     } state_t;
 
     typedef enum logic [1:0] {
@@ -100,6 +101,10 @@ module nmcu #(
     reg [ADDR_WIDTH-1:0] address;
     assign address_bus = mem_sel ? address : {ADDR_WIDTH{1'bZ}};
 
+    // data reg
+    reg [DATABUS_WIDTH-1:0] data;
+    assign data_bus = (mem_sel && mem_w) ? data : {DATABUS_WIDTH{1'bZ}};
+
     // local inputs
     reg [DATABUS_WIDTH-1:0] local_kernels [0:MAX_DESCS-1][0:MAX_KERNEL_DIM-1][0:MAX_KERNEL_DIM-1];
 
@@ -110,9 +115,9 @@ module nmcu #(
     reg conv_pe_rst;
     reg conv_pe_start;
     wire conv_pe_done;
-    reg [$clog2(MAX_INPUT_DIM)-1:0] conv_pe_input_width;
-    reg [$clog2(MAX_INPUT_DIM)-1:0] conv_pe_input_height;
-    reg [$clog2(MAX_INPUT_DIM)-1:0] conv_pe_kernel_size;
+    reg [$clog2(MAX_INPUT_DIM):0] conv_pe_input_width;
+    reg [$clog2(MAX_INPUT_DIM):0] conv_pe_input_height;
+    reg [$clog2(MAX_KERNEL_DIM):0] conv_pe_kernel_size;
     reg [DATABUS_WIDTH-1:0] conv_pe_local_kernel [0:MAX_KERNEL_DIM-1][0:MAX_KERNEL_DIM-1];
     reg [DATABUS_WIDTH-1:0] conv_pe_local_activation_in [0:MAX_INPUT_DIM-1][0:MAX_INPUT_DIM-1];
     wire [DATABUS_WIDTH-1:0] conv_pe_local_activation_out [0:MAX_INPUT_DIM-1][0:MAX_INPUT_DIM-1];
@@ -145,8 +150,12 @@ module nmcu #(
         mem_w <= 0;
         stall <= 0;
         address <= 0;
+        data <= 0;
         local_activation_inp_ind <= 0;
         done <= 0;
+
+        conv_pe_rst <= 0;
+        conv_pe_start <= 0;
     end
 
     always @(posedge clk or posedge rst) begin 
@@ -161,8 +170,12 @@ module nmcu #(
             mem_w <= 0;
             stall <= 0;
             address <= 0;
+            data <= 0;
             local_activation_inp_ind <= 0;
             done <= 0;
+
+            conv_pe_rst <= 0;
+            conv_pe_start <= 0;
        end else begin
             if (stall) begin 
                 mem_sel <= 0;
@@ -264,8 +277,15 @@ module nmcu #(
                         if (layer_type == NOP_TYPE || desc_iter == MAX_DESCS-1) begin 
                             // end iteration
                             desc_iter <= 0;
+                            mem_sel <= 0;
+                            mem_w <= 0;
                             case (descriptors[0][1:0])
-                                NOP_TYPE: state <= NOP;
+                                NOP_TYPE: begin 
+                                    state <= NOP;
+                                    address <= output_addr;
+                                    x <= 0;
+                                    y <= 0;
+                                end
                                 CONV_TYPE: state <= CONV;
                                 MAXP_TYPE: state <= MAXP;
                                 RELU_TYPE: state <= RELU;
@@ -277,6 +297,28 @@ module nmcu #(
                     end
 
                     NOP: begin
+                        // writeback here
+                        mem_sel <= 1;
+                        mem_w <= 1;
+                        data <= local_activations[~local_activation_inp_ind][x][y];
+
+                        if (ready) begin 
+                            stall <= 1;
+                            if (x == full_output_height - 1 && y == full_output_width - 1) begin 
+                                x <= 0;
+                                y <= 0;
+                                state <= FINISHED;
+                            end else if (y == full_output_width - 1) begin 
+                                x <= x + 1;
+                                y <= 0;
+
+                                address <= address + 1;
+                            end else begin 
+                                y <= y + 1;
+
+                                address <= address + 1;
+                            end
+                        end
                     end
 
                     CONV: begin
@@ -284,31 +326,60 @@ module nmcu #(
                         conv_pe_input_height  <= inp_height;
                         conv_pe_kernel_size   <= kernel_size;
 
-                        // copy kernel
-                        for (i = 0; i < kernel_size; i = i + 1) begin
-                            for (j = 0; j < kernel_size; j = j + 1) begin
-                                conv_pe_local_kernel[i][j] <=
-                                    local_kernels[desc_iter][i][j];
+                        // reset
+                        if (conv_pe_rst == 0  && conv_pe_start == 0) begin
+                            // copy kernel
+                            for (i = 0; i < kernel_size; i = i + 1) begin
+                                for (j = 0; j < kernel_size; j = j + 1) begin
+                                    conv_pe_local_kernel[i][j] <=
+                                        local_kernels[desc_iter][i][j];
+                                end
+                            end
+
+                            // copy activations
+                            for (x = 0; x < inp_height; x = x + 1) begin
+                                for (y = 0; y < inp_width; y = y + 1) begin
+                                    conv_pe_local_activation_in[x][y] <=
+                                        local_activations[local_activation_inp_ind][x][y];
+                                end
+                            end
+
+                            conv_pe_rst   <= 1;
+                            conv_pe_start <= 0;
+                        end else if (conv_pe_rst == 1 && conv_pe_start == 0) begin 
+                            conv_pe_rst   <= 0;
+                            conv_pe_start <= 1;
+                        end else if (conv_pe_rst == 0 && conv_pe_start == 1) begin
+                            if (conv_pe_done == 1) begin 
+                                local_activations[~local_activation_inp_ind] <= conv_pe_local_activation_out;
+                                local_activation_inp_ind <= ~local_activation_inp_ind;
+
+                                desc_iter <= desc_iter + 1;
+
+                                case (descriptors[desc_iter][1:0])
+                                    NOP_TYPE: begin 
+                                        state <= NOP;
+                                        address <= output_addr;
+                                        x <= 0;
+                                        y <= 0;
+                                    end
+                                    CONV_TYPE: state <= CONV;
+                                    MAXP_TYPE: state <= MAXP;
+                                    RELU_TYPE: state <= RELU;
+                                endcase
                             end
                         end
-
-                        // copy activations
-                        for (x = 0; x < inp_height; x = x + 1) begin
-                            for (y = 0; y < inp_width; y = y + 1) begin
-                                conv_pe_local_activation_in[x][y] <=
-                                    local_activations[local_activation_inp_ind][x][y];
-                            end
-                        end
-
-                        // start
-                        conv_pe_start <= 1;
-                        conv_pe_rst   <= 0;
                     end
 
                     MAXP: begin 
+                        
                     end
 
                     RELU: begin 
+                    end
+
+                    FINISHED: begin 
+                        done <= 1;
                     end
                 endcase
             end
