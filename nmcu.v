@@ -4,7 +4,7 @@ module nmcu #(
     parameter MAX_DESCS = 8,
     parameter MAX_INPUT_DIM=15,
     parameter MAX_KERNEL_DIM=7,
-    parameter MAX_CNNS=2,
+    parameter MAX_CNNS=2
 ) (
     input wire clk,
     input wire rst,
@@ -69,19 +69,29 @@ module nmcu #(
         RELU,
     } state_t;
 
+    typedef enum logic [1:0] {
+        NOP_TYPE,
+        CONV_TYPE,
+        MAXP_TYPE,
+        RELU_TYPE
+    } layer_type_t;
+
     state_t state;
     
     // descriptors and curr_desc
     reg [31:0] descriptors [0:MAX_DESCS-1];
-    reg [31:0] curr_desc;
+    reg [$clog2(MAX_DESCS):0] desc_iter;
+    wire [31:0] curr_desc = descriptors[desc_iter];
     wire [1:0] layer_type = curr_desc[1:0];
     wire [3:0] inp_width = curr_desc[5:2];
     wire [3:0] inp_height = curr_desc[9:6];
     wire [2:0] kernel_size = curr_desc[12:10];
     wire [15:0] kernel_addr = curr_desc[31:16];
 
-    // descriptor iterator
-    reg [$clog2(MAX_DESCS)-1:0] i;
+    // input iterators
+    reg [$clog2(MAX_INPUT_DIM)-1:0] x, y;
+    // kernel iterators
+    reg [$clog2(MAX_KERNEL_DIM)-1:0] i, j;
 
     // stall reg for memory read
     reg stall;
@@ -92,7 +102,9 @@ module nmcu #(
 
     // local inputs
     reg [DATABUS_WIDTH-1:0] local_kernels [0:MAX_DESCS-1][0:MAX_KERNEL_DIM-1][0:MAX_KERNEL_DIM-1];
-    reg [DATABUS_WIDTH-1:0] local_activations [0:MAX_DESCS-1][0:MAX_INPUT_DIM-1][0:MAX_INPUT_DIM-1];
+
+    reg local_activation_inp_ind;
+    reg [DATABUS_WIDTH-1:0] local_activations [0:1][0:MAX_INPUT_DIM-1][0:MAX_INPUT_DIM-1];
 
     // conv processing element
     reg conv_pe_rst;
@@ -122,12 +134,35 @@ module nmcu #(
         .local_activation_out(conv_pe_local_activation_out)
     );
 
+    initial begin 
+        state <= IDLE;
+        desc_iter <= 0;
+        x <= 0;
+        y <= 0;
+        i <= 0;
+        j <= 0;
+        mem_sel <= 0;
+        mem_w <= 0;
+        stall <= 0;
+        address <= 0;
+        local_activation_inp_ind <= 0;
+        done <= 0;
+    end
+
     always @(posedge clk or posedge rst) begin 
         if (rst) begin
             state <= IDLE;
-            curr_desc <= 0;
-            done <= 0;
+            desc_iter <= 0;
+            x <= 0;
+            y <= 0;
             i <= 0;
+            j <= 0;
+            mem_sel <= 0;
+            mem_w <= 0;
+            stall <= 0;
+            address <= 0;
+            local_activation_inp_ind <= 0;
+            done <= 0;
        end else begin
             if (stall) begin 
                 mem_sel <= 0;
@@ -137,7 +172,6 @@ module nmcu #(
                 case (state)
                     IDLE: begin 
                         state <= IDLE;
-                        curr_desc <= 0;
                         done <= 0;
                         i <= 0;
                         if (start) begin 
@@ -151,15 +185,15 @@ module nmcu #(
                         mem_sel <= 1;
                         mem_w <= 0;
                         if (ready) begin 
-                            descriptors[i] <= data_bus;
+                            descriptors[desc_iter] <= data_bus;
                             stall <= 1;
-                            if (i == MAX_DESCS-1) begin
-                                curr_desc <= descriptors[0];
+                            if (desc_iter == MAX_DESCS-1) begin
                                 state <= READ_INPUTS;
+                                desc_iter <= 0;
                                 address <= input_addr;
                             end else begin
                                 address <= address + 1;
-                                i <= i + 1;
+                                desc_iter <= desc_iter + 1;
                             end
                         end
                     end
@@ -168,43 +202,82 @@ module nmcu #(
                         mem_sel <= 1;
                         mem_w <= 0;
                         if (ready) begin
-                            local_activations[0][i][j] <= data_bus;
+                            local_activations[local_activation_inp_ind][x][y] <= data_bus;
                             stall <= 1;
 
-                            if (i == inp_height - 1 && j == inp_width - 1) begin
-                                i <= 0;
-                                j <= 0;
+                            if (x == inp_height - 1 && y == inp_width - 1) begin
+                                x <= 0;
+                                y <= 0;
 
                                 mem_sel <= 0;
                                 mem_w <= 0;
 
+                                address <= kernel_addr;
                                 state <= READ_KERNELS;
-                            end else if (j == inp_width - 1) begin
-                                i <= i+1;
-                                j <= 0;
+                            end else if (y == inp_width - 1) begin
+                                x <= x + 1;
+                                y <= 0;
                                 
                                 // go back to first elem in row, then go to
                                 // next row entirely
-                                address <= address - j + full_input_width;
+                                address <= address + (full_input_width - inp_width + 1);
                             end else begin 
-                                j <= j+1;
+                                y <= y+1;
                                 address <= address + 1;
                             end
                         end
                     end
 
                     READ_KERNELS: begin 
-                        
-                    end
+                        if (layer_type == CONV_TYPE) begin 
+                            // if conv, load kernel
+                            mem_sel <= 1;
+                            mem_w <= 0;
+                            
+                            if (ready) begin
+                                local_kernels[desc_iter][i][j] <= data_bus;
+                                stall <= 1;
 
-                    INIT: begin 
+                                if (i == kernel_size - 1 && j == kernel_size - 1) begin 
+                                    i <= 0;
+                                    j <= 0;
+
+                                    mem_sel <= 0;
+                                    mem_w <= 0;
+                                end else if (j == kernel_size - 1) begin 
+                                    i <= i + 1;
+                                    j <= 0;
+                                    // we assume the kernel is stored in row
+                                    // major order and since we're loading in
+                                    // the whole thing we don't have to do any
+                                    // funky stuff
+                                    address <= address + 1;
+                                end else begin 
+                                    j <= j + 1;
+                                    address <= address + 1;
+                                end
+                            end
+                        end
+
+                        if (layer_type == NOP_TYPE || desc_iter == MAX_DESCS-1) begin 
+                            // end iteration
+                            desc_iter <= 0;
+                            case (descriptors[0][1:0])
+                                NOP_TYPE: state <= NOP;
+                                CONV_TYPE: state <= CONV;
+                                MAXP_TYPE: state <= MAXP;
+                                RELU_TYPE: state <= RELU;
+                            endcase
+                        end else begin 
+                            desc_iter <= desc_iter + 1;
+                            address <= descriptors[desc_iter+1][31:16]; // next kernel address
+                        end
                     end
 
                     NOP: begin
                     end
 
                     CONV: begin 
-
                     end
 
                     MAXP: begin 
