@@ -110,29 +110,29 @@ module nmcu #(
     reg conv_pe_rst;
     reg conv_pe_start;
     wire conv_pe_done;
-    wire [$clog2(MAX_INPUT_DIM)-1:0] conv_pe_input_width;
-    wire [$clog2(MAX_INPUT_DIM)-1:0] conv_pe_input_height;
-    wire [$clog2(MAX_INPUT_DIM)-1:0] conv_pe_kernel_size;
-    wire [DATABUS_WIDTH-1:0] conv_pe_local_kernel [0:MAX_KERNEL_DIM-1][0:MAX_KERNEL_DIM-1];
-    wire [DATABUS_WIDTH-1:0] conv_pe_local_activation_in [0:MAX_INPUT_DIM-1][0:MAX_INPUT_DIM-1];
+    reg [$clog2(MAX_INPUT_DIM)-1:0] conv_pe_input_width;
+    reg [$clog2(MAX_INPUT_DIM)-1:0] conv_pe_input_height;
+    reg [$clog2(MAX_INPUT_DIM)-1:0] conv_pe_kernel_size;
+    reg [DATABUS_WIDTH-1:0] conv_pe_local_kernel [0:MAX_KERNEL_DIM-1][0:MAX_KERNEL_DIM-1];
+    reg [DATABUS_WIDTH-1:0] conv_pe_local_activation_in [0:MAX_INPUT_DIM-1][0:MAX_INPUT_DIM-1];
     wire [DATABUS_WIDTH-1:0] conv_pe_local_activation_out [0:MAX_INPUT_DIM-1][0:MAX_INPUT_DIM-1];
 
-    // conv_for_nmcu #(
-    //     .MAX_INPUT_DIM(MAX_INPUT_DIM),
-    //     .MAX_KERNEL_DIM(MAX_KERNEL_DIM),
-    //     .DATABUS_WIDTH(DATABUS_WIDTH)
-    // ) conv_pe (
-    //     .clk(clk),
-    //     .rst(conv_pe_rst),
-    //     .start(conv_pe_start),
-    //     .done(conv_pe_done),
-    //     .input_width(conv_pe_input_width),
-    //     .input_height(conv_pe_input_height),
-    //     .kernel_size(conv_pe_kernel_size),
-    //     .local_kernel(conv_pe_local_kernel),
-    //     .local_activation_in(conv_pe_local_activation_in),
-    //     .local_activation_out(conv_pe_local_activation_out)
-    // );
+    conv_for_nmcu #(
+        .MAX_INPUT_DIM(MAX_INPUT_DIM),
+        .MAX_KERNEL_DIM(MAX_KERNEL_DIM),
+        .DATABUS_WIDTH(DATABUS_WIDTH)
+    ) conv_pe (
+        .clk(clk),
+        .rst(conv_pe_rst),
+        .start(conv_pe_start),
+        .done(conv_pe_done),
+        .input_width(conv_pe_input_width),
+        .input_height(conv_pe_input_height),
+        .kernel_size(conv_pe_kernel_size),
+        .local_kernel(conv_pe_local_kernel),
+        .local_activation_in(conv_pe_local_activation_in),
+        .local_activation_out(conv_pe_local_activation_out)
+    );
 
     initial begin 
         state <= IDLE;
@@ -279,7 +279,30 @@ module nmcu #(
                     NOP: begin
                     end
 
-                    CONV: begin 
+                    CONV: begin
+                        conv_pe_input_width   <= inp_width;
+                        conv_pe_input_height  <= inp_height;
+                        conv_pe_kernel_size   <= kernel_size;
+
+                        // copy kernel
+                        for (i = 0; i < kernel_size; i = i + 1) begin
+                            for (j = 0; j < kernel_size; j = j + 1) begin
+                                conv_pe_local_kernel[i][j] <=
+                                    local_kernels[desc_iter][i][j];
+                            end
+                        end
+
+                        // copy activations
+                        for (x = 0; x < inp_height; x = x + 1) begin
+                            for (y = 0; y < inp_width; y = y + 1) begin
+                                conv_pe_local_activation_in[x][y] <=
+                                    local_activations[local_activation_inp_ind][x][y];
+                            end
+                        end
+
+                        // start
+                        conv_pe_start <= 1;
+                        conv_pe_rst   <= 0;
                     end
 
                     MAXP: begin 
