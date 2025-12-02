@@ -377,19 +377,22 @@ module nmcu #(
 
                         // reset
                         if (conv_pe_rst == 0  && conv_pe_start == 0) begin
+                            integer ki, kj;
+                            integer xi, yj;
+
                             // copy kernel
-                            for (i = 0; i < kernel_size; i = i + 1) begin
-                                for (j = 0; j < kernel_size; j = j + 1) begin
-                                    conv_pe_local_kernel[i][j] <=
-                                        local_kernels[desc_iter][i][j];
+                            for (ki = 0; ki < kernel_size; ki = ki + 1) begin
+                                for (kj = 0; kj < kernel_size; kj = kj + 1) begin
+                                    conv_pe_local_kernel[ki][kj] <=
+                                        local_kernels[desc_iter][ki][kj];
                                 end
                             end
 
                             // copy activations
-                            for (x = 0; x < inp_height; x = x + 1) begin
-                                for (y = 0; y < inp_width; y = y + 1) begin
-                                    conv_pe_local_activation_in[x][y] <=
-                                        local_activations[local_activation_inp_ind][x][y];
+                            for (xi = 0; xi < inp_height; xi = xi + 1) begin
+                                for (yj = 0; yj < inp_width; yj = yj + 1) begin
+                                    conv_pe_local_activation_in[xi][yj] <=
+                                        local_activations[local_activation_inp_ind][xi][yj];
                                 end
                             end
 
