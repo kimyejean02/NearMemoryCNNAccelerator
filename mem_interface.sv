@@ -20,30 +20,37 @@ module mem_interface #(
     output wire [ADDR_WIDTH-1:0] addr_bus,
     inout wire [DATABUS_WIDTH-1:0] data_bus
 );
-    reg [$clog2(NUM_PORTS):0] i;
+    reg [$clog2(NUM_PORTS):0] ind;
 
     reg [ADDR_WIDTH-1:0] address;
     assign addr_bus = (mem_sel) ? address: 'z;
 
     reg [DATABUS_WIDTH-1:0] data;
     assign data_bus = (mem_sel && mem_w) ? data : 'z;
+
+    genvar i;
+    generate
+        for (i = 0; i < NUM_PORTS; i = i + 1) begin
+            assign data_bus_ind[i] = (mem_sel_ind[i] && !mem_w_ind[i] && mem_ready_ind[i]) ? data_bus : 'z;
+        end
+    endgenerate
     
     always @(posedge clk or posedge rst) begin 
         if (rst) begin
             mem_ready_ind <= '0;
-            i <= 0;
+            ind <= 0;
         end else begin
-            if (mem_sel_ind[i] & !mem_ready_ind[i]) begin // unserviced request
-                mem_w <= mem_w_ind[i];
-                mem_sel <= mem_sel_ind[i];
-                address  <= addr_bus_ind[i];
-                if (mem_w_ind[i]) begin
-                    data <= data_bus_ind[i];
+            if (mem_sel_ind[ind] & !mem_ready_ind[ind]) begin // unserviced request
+                mem_w <= mem_w_ind[ind];
+                mem_sel <= mem_sel_ind[ind];
+                address  <= addr_bus_ind[ind];
+                if (mem_w_ind[ind]) begin
+                    data <= data_bus_ind[ind];
                 end
-                mem_ready_ind[i] <= mem_ready;
+                mem_ready_ind[ind] <= mem_ready;
             end else begin 
-                mem_ready_ind[i] <= 1'b0;
-                i <= (i + 1) % NUM_PORTS;
+                mem_ready_ind[ind] <= 1'b0;
+                ind <= (ind + 1) % NUM_PORTS;
             end
         end
     end
