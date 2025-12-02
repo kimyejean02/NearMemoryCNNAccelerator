@@ -35,10 +35,16 @@ module mem_interface #(
         end
     endgenerate
     
+    reg stall;
+
     always @(posedge clk or posedge rst) begin 
         if (rst) begin
             mem_ready_ind <= '0;
             ind <= 0;
+        end else if (stall) begin
+            mem_sel <= 0;
+            mem_w <= 0;
+            stall <= 0;
         end else begin
             if (mem_sel_ind[ind] & !mem_ready_ind[ind]) begin // unserviced request
                 mem_w <= mem_w_ind[ind];
@@ -48,6 +54,9 @@ module mem_interface #(
                     data <= data_bus_ind[ind];
                 end
                 mem_ready_ind[ind] <= mem_ready;
+                if (mem_ready) begin 
+                    stall <= 1;
+                end
             end else begin 
                 mem_ready_ind[ind] <= 1'b0;
                 ind <= (ind + 1) % NUM_PORTS;

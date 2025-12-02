@@ -83,6 +83,7 @@ module tb_nmcu_2;
         .LATENCY(2)
     ) memory (
         .clk(clk),
+        .rst(rst),
         .sel(mem_sel),
         .w_en(mem_w),
         .address_bus(address_bus),
@@ -168,41 +169,26 @@ module tb_nmcu_2;
 
         memory.memory[1] = {16'h0000, 3'b000, 3'b000, 4'b0001, 4'b0001, 2'b00}; // NOP, input 1x1 (specify the output size that's not the full output size here)
 
-        for (i = 0; i < KERNEL_DIM; i = i + 1) begin
-            for (j = 0; j < KERNEL_DIM; j = j + 1) begin
-                case ({i,j})
-                    8'b0000_0000: val =  1;
-                    8'b0000_0001: val = -1;
-                    8'b0000_0010: val =  2;
-                    8'b0000_0011: val =  0;
+        // Kernel
+        memory.memory[16'h1234 + 0*4 + 0] =  1;  $display("KERNEL write @ %h = %0d (i=0 j=0)", 16'h1234 + 0*4 + 0,  1);
+        memory.memory[16'h1234 + 0*4 + 1] = -1;  $display("KERNEL write @ %h = %0d (i=0 j=1)", 16'h1234 + 0*4 + 1, -1);
+        memory.memory[16'h1234 + 0*4 + 2] =  2;  $display("KERNEL write @ %h = %0d (i=0 j=2)", 16'h1234 + 0*4 + 2,  2);
+        memory.memory[16'h1234 + 0*4 + 3] =  0;  $display("KERNEL write @ %h = %0d (i=0 j=3)", 16'h1234 + 0*4 + 3,  0);
 
-                    8'b0001_0000: val = -2;
-                    8'b0001_0001: val =  3;
-                    8'b0001_0010: val = -1;
-                    8'b0001_0011: val =  4;
+        memory.memory[16'h1234 + 1*4 + 0] = -2;  $display("KERNEL write @ %h = %0d (i=1 j=0)", 16'h1234 + 1*4 + 0, -2);
+        memory.memory[16'h1234 + 1*4 + 1] =  3;  $display("KERNEL write @ %h = %0d (i=1 j=1)", 16'h1234 + 1*4 + 1,  3);
+        memory.memory[16'h1234 + 1*4 + 2] = -1;  $display("KERNEL write @ %h = %0d (i=1 j=2)", 16'h1234 + 1*4 + 2, -1);
+        memory.memory[16'h1234 + 1*4 + 3] =  4;  $display("KERNEL write @ %h = %0d (i=1 j=3)", 16'h1234 + 1*4 + 3,  4);
 
-                    8'b0010_0000: val =  1;
-                    8'b0010_0001: val =  0;
-                    8'b0010_0010: val =  1;
-                    8'b0010_0011: val = -3;
+        memory.memory[16'h1234 + 2*4 + 0] =  1;  $display("KERNEL write @ %h = %0d (i=2 j=0)", 16'h1234 + 2*4 + 0,  1);
+        memory.memory[16'h1234 + 2*4 + 1] =  0;  $display("KERNEL write @ %h = %0d (i=2 j=1)", 16'h1234 + 2*4 + 1,  0);
+        memory.memory[16'h1234 + 2*4 + 2] =  1;  $display("KERNEL write @ %h = %0d (i=2 j=2)", 16'h1234 + 2*4 + 2,  1);
+        memory.memory[16'h1234 + 2*4 + 3] = -3;  $display("KERNEL write @ %h = %0d (i=2 j=3)", 16'h1234 + 2*4 + 3, -3);
 
-                    8'b0011_0000: val =  2;
-                    8'b0011_0001: val =  2;
-                    8'b0011_0010: val = -2;
-                    8'b0011_0011: val =  5;
-
-                    default:       val = 0;
-                endcase
-
-                memory.memory[16'h1234 + i*KERNEL_DIM + j] = val;
-
-                $display("KERNEL write @ %h = %0d (i=%0d j=%0d)",
-                        16'h1234 + i*KERNEL_DIM + j,
-                        val,
-                        i,
-                        j);
-            end
-        end
+        memory.memory[16'h1234 + 3*4 + 0] =  2;  $display("KERNEL write @ %h = %0d (i=3 j=0)", 16'h1234 + 3*4 + 0,  2);
+        memory.memory[16'h1234 + 3*4 + 1] =  2;  $display("KERNEL write @ %h = %0d (i=3 j=1)", 16'h1234 + 3*4 + 1,  2);
+        memory.memory[16'h1234 + 3*4 + 2] = -2;  $display("KERNEL write @ %h = %0d (i=3 j=2)", 16'h1234 + 3*4 + 2, -2);
+        memory.memory[16'h1234 + 3*4 + 3] =  5;  $display("KERNEL write @ %h = %0d (i=3 j=3)", 16'h1234 + 3*4 + 3,  5);
 
         // Load input data (6x6) with mixed positives and negatives
         for (i = 0; i < INPUT_DIM; i = i + 1) begin
