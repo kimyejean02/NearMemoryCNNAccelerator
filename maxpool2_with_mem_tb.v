@@ -6,42 +6,29 @@ module tb_maxpool2_with_mem;
     reg start;
     wire done;
 
-    // Test data: 4x4 input matrix
     reg [7:0] input_data [0:15];
 
     reg [7:0] input_addr;
     reg [7:0] output_addr;
 
-    reg driving_mem;
-
-    reg [7:0] my_address;
     wire [7:0] address_bus;
-    assign address_bus = (driving_mem) ? my_address : 8'bZ;
-
-    reg my_mem_sel;
-    wire pool_mem_sel;
-    wire mem_sel;
-    assign mem_sel = (driving_mem) ? my_mem_sel : pool_mem_sel;
-
-    reg my_mem_w_en;
-    wire mem_w_en;
-    wire pool_mem_w_en;
-    assign mem_w_en = (driving_mem) ? my_mem_w_en : pool_mem_w_en;
-
-    reg [31:0] my_data;
     wire [31:0] data_bus;
-    assign data_bus = (driving_mem && my_mem_w_en) ? my_data : 32'bZ;
 
-    // Memory instance
+    wire mem_sel;
+    wire mem_w_en;
+
+    wire ready;
+
     mem memory (
         .clk(clk),
-        .w_en(mem_w_en),
+        .rst(rst),
         .sel(mem_sel),
+        .w_en(mem_w_en),
         .address_bus(address_bus),
-        .data_bus(data_bus)
+        .data_bus(data_bus),
+        .ready(ready)
     );
 
-    // DUT: maxpool2_with_mem
     maxpool2_with_mem #(
         .DATA_WIDTH(8),
         .ADDR_WIDTH(8),
@@ -57,39 +44,24 @@ module tb_maxpool2_with_mem;
         .done(done),
         .input_addr(input_addr),
         .output_addr(output_addr),
-        .mem_w(pool_mem_w_en),
-        .mem_sel(pool_mem_sel),
+        .mem_w(mem_w_en),
+        .mem_sel(mem_sel),
         .address_bus(address_bus),
-        .data_bus(data_bus)
+        .data_bus(data_bus),
+        .ready(ready)
     );
 
-    // Clock generation
     initial clk = 0;
     always #10 clk = !clk;
-    
+
     initial begin 
-        // Initialize signals
         rst <= 1;
         start <= 0;
-        driving_mem <= 0;
-        my_address <= 0;
-        my_data <= 0;
 
-        // Wait for reset
         repeat(4) @(posedge clk);
         rst <= 0;
         @(posedge clk);
 
-        // Initialize test data
-        // Input: 4x4 matrix
-        // [1   2   3   4 ]
-        // [5   6   7   8 ]
-        // [9  10  11  12 ]
-        // [13 14  15  16 ]
-        //
-        // Expected output with 2x2 maxpool, stride=2:
-        // [6  8 ]
-        // [14 16]
         input_data = '{
             1, 2, 3, 4,
             5, 6, 7, 8,
@@ -97,67 +69,48 @@ module tb_maxpool2_with_mem;
             13, 14, 15, 16
         };
 
-        // Set memory addresses
-        input_addr <= 0;    // Input starts at address 0
-        output_addr <= 20;  // Output starts at address 20
+        input_addr <= 0;
+        output_addr <= 20;
 
-        // Write input data to memory
-        $display("\n=== Writing Input Data to Memory ===");
-        driving_mem <= 1;
-        my_mem_sel <= 1;
-        my_mem_w_en <= 1;
+        memory.memory[0]  = 32'd1;
+	memory.memory[1]  = 32'd2;
+	memory.memory[2]  = 32'd3;
+	memory.memory[3]  = 32'd4;
 
-        @(posedge clk);
+	memory.memory[4]  = 32'd5;
+	memory.memory[5]  = 32'd6;
+	memory.memory[6]  = 32'd7;
+	memory.memory[7]  = 32'd8;
 
-        for (integer i = 0; i < 16; i++) begin
-            my_address <= input_addr + i;
-            my_data <= input_data[i];
-            @(posedge clk);
-            $display("Time %0t: Writing data[%0d] = %0d to address %0d", 
-                     $time, i, input_data[i], my_address);
-        end
+	memory.memory[8]  = 32'd9;
+	memory.memory[9]  = 32'd10;
+	memory.memory[10] = 32'd11;
+	memory.memory[11] = 32'd12;
 
-        // Release memory bus
-        driving_mem <= 0;
-        my_mem_sel <= 0;
-        my_mem_w_en <= 0;
-        @(posedge clk);
+	memory.memory[12] = 32'd13;
+	memory.memory[13] = 32'd14;
+	memory.memory[14] = 32'd15;
+	memory.memory[15] = 32'd16;
 
-        // Start max pooling operation
         $display("\n=== Starting Max Pooling Operation ===");
         $display("Time %0t: Asserting start signal", $time);
         start <= 1;
         @(posedge clk);
         start <= 0;
 
-        // Wait for completion
         $display("Time %0t: Waiting for done signal...", $time);
         wait(done);
         $display("Time %0t: Max pooling completed!", $time);
-        
-        // Wait a few cycles
+
         repeat(3) @(posedge clk);
 
-        // Read output from memory
         $display("\n=== Reading Output Data from Memory ===");
-        driving_mem <= 1;
-        my_mem_sel <= 1;
-        my_mem_w_en <= 0;
 
-        @(posedge clk);
-
-        // Expected: 4 output values (2x2 output)
         for (integer i = 0; i < 4; i++) begin
-            my_address <= output_addr + i;
-            @(posedge clk);
-            $display("Time %0t: Reading output[%0d] = %0d from address %0d", 
-                     $time, i, data_bus[7:0], my_address);
+            $display("Time %0t: output[%0d] = %0d",
+                     $time, i, memory.memory[output_addr + i][7:0]);
         end
 
-        driving_mem <= 0;
-        my_mem_sel <= 0;
-
-        // Verify results
         $display("\n=== Verification ===");
         $display("Expected output:");
         $display("[6  8 ]");
@@ -168,14 +121,12 @@ module tb_maxpool2_with_mem;
         $finish;
     end
 
-    // Timeout watchdog
     initial begin
         #10000;
         $display("\nERROR: Timeout! Test did not complete in time.");
         $finish;
     end
 
-    // Monitor for debugging
     initial begin
         $display("\n=== Max Pool 2x2 with Memory Testbench ===");
         $display("Configuration:");
@@ -187,3 +138,4 @@ module tb_maxpool2_with_mem;
     end
 
 endmodule
+

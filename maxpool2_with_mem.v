@@ -20,7 +20,8 @@ module maxpool2_with_mem #(
     output reg mem_w,
     output reg mem_sel,
     inout wire [ADDR_WIDTH-1:0] address_bus,
-    inout wire [DATABUS_WIDTH-1:0] data_bus
+    inout wire [DATABUS_WIDTH-1:0] data_bus,
+    input  wire ready
 );
 
     // Output dimensions
@@ -35,16 +36,17 @@ module maxpool2_with_mem #(
 
     // Internal storage for input matrix
     reg [DATA_WIDTH-1:0] input_mat [0:HEIGHT-1][0:WIDTH-1];
-    
-    // Temporary storage for pooling window
-    reg [DATA_WIDTH-1:0] pool_window [0:POOL_SIZE-1][0:POOL_SIZE-1];
+
+    // Temporary storage for max value
     reg [DATA_WIDTH-1:0] max_val;
+    reg [$clog2(POOL_SIZE):0] pool_i, pool_j;
 
     typedef enum logic [2:0] {
         IDLE,
         LOAD_INPUT,
-        LOAD_WINDOW,
+        INIT_WINDOW,
         COMPUTE,
+        WRITE_OUTPUT,
         NEXT,
         FINISHED
     } state_t;
@@ -52,150 +54,156 @@ module maxpool2_with_mem #(
     state_t state;
 
     wire driving_mem;
-    assign driving_mem = (state == LOAD_INPUT) || (state == NEXT);
+    assign driving_mem = (state == LOAD_INPUT) || (state == WRITE_OUTPUT);
 
     reg [ADDR_WIDTH-1:0] address;
-    assign address_bus = (driving_mem) ? address : {ADDR_WIDTH{1'bZ}};
+    assign address_bus = (mem_sel)? address : {ADDR_WIDTH{1'bZ}};
 
     reg [DATABUS_WIDTH-1:0] data;
-    assign data_bus = (driving_mem && mem_w) ? data : {DATABUS_WIDTH{1'bZ}};
+    assign data_bus = (mem_sel && mem_w)? data : {DATABUS_WIDTH{1'bZ}};
 
-    initial begin 
-        state     <= IDLE;
-        x         <= 0;
-        y         <= 0;
-        i         <= 0;
-        j         <= 0;
-        mem_w     <= 0;
-        mem_sel   <= 0;
-        address   <= 0;
-        done      <= 0;
-        max_val   <= 0;
+    reg stall;
+
+    initial begin
+        state   <= IDLE;
+        x       <= 0;
+        y       <= 0;
+        i       <= 0;
+        j       <= 0;
+        mem_w   <= 0;
+        mem_sel <= 0;
+        address <= 0;
+        done    <= 0;
+        max_val <= 0;
+        stall   <= 0;
+        pool_i  <= 0;
+        pool_j  <= 0;
+        data    <= 0;
     end
 
     always @(posedge clk or posedge rst) begin
         if (rst) begin
-            state     <= IDLE;
-            x         <= 0;
-            y         <= 0;
-            i         <= 0;
-            j         <= 0;
-            mem_w     <= 0;
-            mem_sel   <= 0;
-            address   <= 0;
-            data      <= 0;
-            done      <= 0;
-            max_val   <= 0;
+            state   <= IDLE;
+            x       <= 0;
+            y       <= 0;
+            i       <= 0;
+            j       <= 0;
+            mem_w   <= 0;
+            mem_sel <= 0;
+            address <= 0;
+            data    <= 0;
+            done    <= 0;
+            max_val <= 0;
+            stall   <= 0;
+            pool_i  <= 0;
+            pool_j  <= 0;
         end else begin
-            case (state)
-                IDLE: begin
-                    done <= 0;
-                    if (start) begin
-                        x <= 0;
-                        y <= 0;
-                        i <= 0;
-                        j <= 0;
-                        max_val <= 0;
+            if (stall) begin
+                mem_sel <= 0;
+                mem_w   <= 0;
+                stall   <= 0;
+            end else begin
+                case (state)
+                    IDLE: begin
+                        done <= 0;
+                        if (start) begin
+                            x <= 0;
+                            y <= 0;
+                            i <= 0;
+                            j <= 0;
+                            mem_w <= 0;
+                            mem_sel <= 0;
+                            address <= input_addr;
+                            state <= LOAD_INPUT;
+                        end
+                    end
 
-                        mem_w <= 0;
+                    // Load entire input matrix from memory
+                    LOAD_INPUT: begin
                         mem_sel <= 1;
-                        address <= input_addr;
+                        mem_w   <= 0;
+                        if (ready) begin
+                            input_mat[i][j] <= data_bus[DATA_WIDTH-1:0];
+                            address <= address + 1;
+                            mem_sel <= 0;
+                            stall <= 1;
 
-                        state <= LOAD_INPUT;
+                            if (i == HEIGHT-1 && j == WIDTH-1) begin
+                                i <= 0;
+                                j <= 0;
+                                mem_w <= 1;
+                                address <= output_addr;
+                                state <= INIT_WINDOW;
+                            end else if (j == WIDTH-1) begin
+                                i <= i + 1;
+                                j <= 0;
+                            end else begin
+                                j <= j + 1;
+                            end
+                        end
                     end
-                end
 
-                // Load entire input matrix from memory
-                LOAD_INPUT: begin 
-                    input_mat[i][j] <= data_bus[DATA_WIDTH-1:0];
-                    address <= address + 1;
-
-                    if (i == HEIGHT-1 && j == WIDTH-1) begin 
-                        i <= 0;
-                        j <= 0;
-
-                        mem_w <= 1;
-                        mem_sel <= 0;
-                        address <= output_addr;
-
-                        state <= LOAD_WINDOW;
-                    end else if (j == WIDTH-1) begin
-                        i <= i + 1;
-                        j <= 0;
-                    end else begin 
-                        j <= j + 1;
-                    end
-                end
-
-                // Load pooling window from input matrix
-                LOAD_WINDOW: begin
-                    pool_window[i][j] <= input_mat[y+i][x+j];
-
-                    if (i == POOL_SIZE-1 && j == POOL_SIZE-1) begin
-                        i <= 0;
-                        j <= 0;
-                        max_val <= input_mat[y][x];  // Initialize with first element
+                    // Initialize pooling window
+                    INIT_WINDOW: begin
+                        pool_i <= 0;
+                        pool_j <= 0;
+                        max_val <= input_mat[y][x];
                         state <= COMPUTE;
-                    end else if (j == POOL_SIZE-1) begin
-                        i <= i + 1;
-                        j <= 0;
-                    end else begin
-                        j <= j + 1;
-                    end
-                end
-
-                // Compute max pooling for current window
-                COMPUTE: begin
-                    // Update max value if current element is larger
-                    if (pool_window[i][j] > max_val) begin
-                        max_val <= pool_window[i][j];
                     end
 
-                    if (i == POOL_SIZE-1 && j == POOL_SIZE-1) begin
-                        i <= 0;
-                        j <= 0;
+                    // Compute max pool for current window
+                    COMPUTE: begin
+                        if (input_mat[y + pool_i][x + pool_j] > max_val)
+                            max_val <= input_mat[y + pool_i][x + pool_j];
 
-                        // Final comparison: use the larger of max_val and current element
-                        if (pool_window[i][j] > max_val) begin
-                            data <= {{(DATABUS_WIDTH-DATA_WIDTH){1'b0}}, pool_window[i][j]};
+                        if (pool_j == POOL_SIZE-1) begin
+                            pool_j <= 0;
+                            if (pool_i == POOL_SIZE-1) begin
+                                pool_i <= 0;
+                                state <= WRITE_OUTPUT;
+                            end else begin
+                                pool_i <= pool_i + 1;
+                            end
                         end else begin
-                            data <= {{(DATABUS_WIDTH-DATA_WIDTH){1'b0}}, max_val};
+                            pool_j <= pool_j + 1;
                         end
+                    end
+
+                    // Write output to memory
+                    WRITE_OUTPUT: begin
                         mem_sel <= 1;
-
-                        state <= NEXT;
-                    end else if (j == POOL_SIZE-1) begin
-                        i <= i + 1;
-                        j <= 0;
-                    end else begin
-                        j <= j + 1;
-                    end
-                end
-
-                // Move to next output pixel
-                NEXT: begin
-                    mem_sel <= 0;
-                    max_val <= 0;
-                    address <= address + 1;
-
-                    if (x < OUT_W - 1) begin
-                        x <= x + STRIDE;
-                        state <= LOAD_WINDOW;
-                    end else begin
-                        x <= 0;
-                        if (y < OUT_H - 1) begin
-                            y <= y + STRIDE;
-                            state <= LOAD_WINDOW;
-                        end else begin
-                            state <= FINISHED;
+                        mem_w <= 1;
+                        data <= {{(DATABUS_WIDTH-DATA_WIDTH){1'b0}}, max_val};
+                        if (ready) begin
+                            mem_sel <= 0;
+                            mem_w <= 0;
+                            stall <= 1;
+                            state <= NEXT;
                         end
                     end
-                end
 
-                FINISHED: begin
-                    done <= 1;
-                end
-            endcase
+                    // Move sliding window
+                    NEXT: begin
+                        if (x < OUT_W - 1) begin
+                            x <= x + STRIDE;
+                            state <= INIT_WINDOW;
+                        end else begin
+                            x <= 0;
+                            if (y < OUT_H - 1) begin
+                                y <= y + STRIDE;
+                                state <= INIT_WINDOW;
+                            end else begin
+                                state <= FINISHED;
+                            end
+                        end
+                    end
+
+                    FINISHED: begin
+                        done <= 1;
+                    end
+                endcase
+            end
         end
     end
 endmodule
+

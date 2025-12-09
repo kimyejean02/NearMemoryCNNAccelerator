@@ -19,7 +19,7 @@ module mem
     reg [DATA_WIDTH-1:0] d_out;
     reg data_valid;
 
-    assign data_bus = (sel && !w_en && data_valid) ? d_out : {DATA_WIDTH{1'bz}};
+    assign data_bus = (sel && !w_en && data_valid && ready) ? d_out : {DATA_WIDTH{1'bz}};
 
     reg [$clog2(LATENCY+1)-1:0] cnt = 0;
     reg req_active = 0;
