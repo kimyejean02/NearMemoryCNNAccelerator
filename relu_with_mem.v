@@ -18,7 +18,8 @@ module relu_with_mem #(
     output reg mem_w,
     output reg mem_sel,
     inout wire [ADDR_WIDTH-1:0] address_bus,
-    inout wire [DATABUS_WIDTH-1:0] data_bus
+    inout wire [DATABUS_WIDTH-1:0] data_bus,
+    input  wire ready
 );
 
     integer i, j;
@@ -43,13 +44,15 @@ module relu_with_mem #(
 
     wire driving_mem;
     // drive address during loads, computes (when writing) and next state transitions
-    assign driving_mem = (state == LOAD_MAT) || (state == NEXT);
+    assign driving_mem = (state == LOAD_MAT) || (state == NEXT) || (state == COMPUTE);
 
     reg [ADDR_WIDTH-1:0] address;
     assign address_bus = (driving_mem) ? address : {ADDR_WIDTH{1'bZ}};
 
     reg [DATABUS_WIDTH-1:0] data;
     assign data_bus = (driving_mem && mem_w) ? data : {DATABUS_WIDTH{1'bZ}};
+
+    reg stall;
 
     initial begin
         state     <= IDLE;
@@ -62,6 +65,7 @@ module relu_with_mem #(
         address   <= 0;
         data      <= 0;
         done      <= 0;
+        stall     <= 0;
     end
 
     always @(posedge clk or posedge rst) begin
@@ -76,94 +80,105 @@ module relu_with_mem #(
             address   <= 0;
             data      <= 0;
             done      <= 0;
+            stall     <= 0;
         end else begin
-            case (state)
-                IDLE: begin
-                    done <= 0;
-                    if (start) begin
-                        // start reading input matrix from memory
-                        x <= 0;
-                        y <= 0;
-                        i <= 0;
-                        j <= 0;
+            if (stall) begin
+                mem_w   <= 0;
+                mem_sel <= 0;
+                stall   <= 0;
+            end else begin
+                case (state)
+                    IDLE: begin
+                        done <= 0;
+                        if (start) begin
+                            x <= 0;
+                            y <= 0;
+                            i <= 0;
+                            j <= 0;
 
-                        mem_w <= 0;      // read
-                        mem_sel <= 1;    // select memory for read
-                        address <= input_addr;
+                            mem_w <= 0;      // read
+                            mem_sel <= 1;    // select memory for read
+                            address <= input_addr;
 
-                        state <= LOAD_MAT;
-                    end
-                end
-
-                // Load entire input matrix from memory (assumes memory provides data immediately)
-                LOAD_MAT: begin
-                    matrix[i][j] <= data_bus[DATA_WIDTH-1:0];
-                    address <= address + 1;
-
-                    if (i == HEIGHT-1 && j == WIDTH-1) begin
-                        i <= 0;
-                        j <= 0;
-
-                        // prepare to compute and set write address base
-                        // set address to output base before writing results
-                        address <= output_addr;
-                        mem_sel <= 0; // switch to write semantics for subsequent writes
-
-                        state <= COMPUTE;
-                        x <= 0;
-                        y <= 0;
-                    end else if (j == WIDTH-1) begin
-                        i <= i + 1;
-                        j <= 0;
-                    end else begin
-                        j <= j + 1;
-                    end
-                end
-
-                // Compute ReLU over current window element (element-wise)
-                COMPUTE: begin
-                    // Apply ReLU to matrix[y][x]
-                    // Apply ReLU to matrix[y][x] and write result
-                    if (matrix[y][x] > 0) begin
-                        result[y][x] <= matrix[y][x];
-                        // write matrix[y][x] to data bus (sign-extended to DATABUS_WIDTH)
-                        data <= {{(DATABUS_WIDTH-DATA_WIDTH){matrix[y][x][DATA_WIDTH-1]}}, matrix[y][x]};
-                    end else begin
-                        result[y][x] <= 0;
-                        // write 0 to data bus
-                        data <= {DATABUS_WIDTH{1'b0}};
-                    end
-                    mem_w <= 1;    // drive data_bus this cycle to perform write
-                    mem_sel <= 1;
-                    state <= NEXT;
-                end
-                // move to next element and increment output address
-                NEXT: begin
-                    mem_w <= 0;
-                    mem_sel <= 0;
-                    // increment address to next output location
-                    address <= address + 1;
-
-                    if (x < WIDTH - 1) begin
-                        x <= x + 1;
-                        state <= COMPUTE;
-                    end else begin
-                        x <= 0;
-                        if (y < HEIGHT - 1) begin
-                            y <= y + 1;
-                            state <= COMPUTE;
-                        end else begin
-                            state <= FINISHED;
+                            state <= LOAD_MAT;
                         end
                     end
-                end
 
-                FINISHED: begin
-                    done <= 1;
-                end
+                    // Load entire input matrix from memory (assumes memory provides data when ready)
+                    LOAD_MAT: begin
+                        mem_sel <= 1;
+                        mem_w   <= 0;
+                        if (ready) begin
+                            matrix[i][j] <= data_bus[DATA_WIDTH-1:0];
+                            address <= address + 1;
+                            stall <= 1;
 
-                default: state <= IDLE;
-            endcase
+                            if (i == HEIGHT-1 && j == WIDTH-1) begin
+                                i <= 0;
+                                j <= 0;
+
+                                // prepare to compute and set write address base
+                                address <= output_addr;
+                                mem_sel <= 0; // switch to write semantics for subsequent writes
+
+                                state <= COMPUTE;
+                                x <= 0;
+                                y <= 0;
+                            end else if (j == WIDTH-1) begin
+                                i <= i + 1;
+                                j <= 0;
+                            end else begin
+                                j <= j + 1;
+                            end
+                        end
+                    end
+
+                    // Compute ReLU over current window element (element-wise)
+                    COMPUTE: begin
+                        if (matrix[y][x] > 0) begin
+                            result[y][x] <= matrix[y][x];
+                            data <= {{(DATABUS_WIDTH-DATA_WIDTH){matrix[y][x][DATA_WIDTH-1]}}, matrix[y][x]};
+                        end else begin
+                            result[y][x] <= 0;
+                            data <= {DATABUS_WIDTH{1'b0}};
+                        end
+                        mem_w <= 1;
+                        mem_sel <= 1;
+
+                        if (ready) begin
+                            stall <= 1;
+                            state <= NEXT;
+                        end
+                    end
+
+                    // move to next element and increment output address
+                    NEXT: begin
+                        mem_w <= 0;
+                        mem_sel <= 0;
+                        address <= address + 1;
+
+                        if (x < WIDTH - 1) begin
+                            x <= x + 1;
+                            state <= COMPUTE;
+                        end else begin
+                            x <= 0;
+                            if (y < HEIGHT - 1) begin
+                                y <= y + 1;
+                                state <= COMPUTE;
+                            end else begin
+                                state <= FINISHED;
+                            end
+                        end
+                    end
+
+                    FINISHED: begin
+                        done <= 1;
+                    end
+
+                    default: state <= IDLE;
+                endcase
+            end
         end
     end
 endmodule
+

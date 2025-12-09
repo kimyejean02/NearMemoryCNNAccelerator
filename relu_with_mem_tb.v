@@ -6,7 +6,6 @@ module tb_relu_with_mem;
     reg start;
     wire done;
 
-    // parameters to match DUT
     localparam DATA_WIDTH = 8;
     localparam DATABUS_WIDTH = 32;
     localparam ADDR_WIDTH = 8;
@@ -14,50 +13,29 @@ module tb_relu_with_mem;
     localparam WIDTH = 3;
     localparam N = HEIGHT * WIDTH;
 
-    // addresses
     reg [ADDR_WIDTH-1:0] input_addr;
     reg [ADDR_WIDTH-1:0] output_addr;
 
-    // external memory-driver signals (TB drives memory when driving_mem=1)
-    reg driving_mem;
-
-    reg [ADDR_WIDTH-1:0] my_address;
-    wire [ADDR_WIDTH-1:0] address_bus;
-    assign address_bus = (driving_mem) ? my_address : {ADDR_WIDTH{1'bZ}};
-
-    reg my_mem_sel;
-    wire dut_mem_sel;
     wire mem_sel;
-    // when TB is driving, use my_mem_sel; otherwise expose DUT's mem_sel to mem
-    assign mem_sel = (driving_mem) ? my_mem_sel : dut_mem_sel;
-
-    reg my_mem_w_en;
-    wire dut_mem_w_en;
     wire mem_w_en;
-    assign mem_w_en = (driving_mem) ? my_mem_w_en : dut_mem_w_en;
-
-    reg [DATABUS_WIDTH-1:0] my_data;
+    wire [ADDR_WIDTH-1:0] address_bus;
     wire [DATABUS_WIDTH-1:0] data_bus;
-    assign data_bus = (driving_mem && my_mem_w_en) ? my_data : {DATABUS_WIDTH{1'bZ}};
+    wire ready;
 
-    // temporary array of input values (signed DATA_WIDTH each)
-    reg signed [DATA_WIDTH-1:0] vals [0:N-1];
-
-    // loop variables and timeout counter
-    integer i;
-    integer timeout;
-
-    // instantiate memory module used by other testbenches
-    mem #(.DATA_WIDTH(DATABUS_WIDTH), .ADDRESS_WIDTH(ADDR_WIDTH)) memory (
+    // instantiate memory
+    mem #(
+        .DATA_WIDTH(DATABUS_WIDTH),
+        .ADDRESS_WIDTH(ADDR_WIDTH)
+    ) memory (
         .clk(clk),
         .w_en(mem_w_en),
         .sel(mem_sel),
         .address_bus(address_bus),
-        .data_bus(data_bus)
+        .data_bus(data_bus),
+        .ready(ready)
     );
 
     // instantiate DUT
-    wire dut_mem_w;
     relu_with_mem #(
         .DATA_WIDTH(DATA_WIDTH),
         .ADDR_WIDTH(ADDR_WIDTH),
@@ -71,32 +49,30 @@ module tb_relu_with_mem;
         .done(done),
         .input_addr(input_addr),
         .output_addr(output_addr),
-        .mem_w(dut_mem_w_en),
-        .mem_sel(dut_mem_sel),
+        .mem_w(mem_w_en),
+        .mem_sel(mem_sel),
         .address_bus(address_bus),
-        .data_bus(data_bus)
+        .data_bus(data_bus),
+        .ready(ready)
     );
 
     initial clk = 0;
     always #5 clk = ~clk;
 
+    integer i;
+    reg signed [DATA_WIDTH-1:0] vals [0:N-1];
+
     initial begin
-        // initialize control
         rst = 1;
         start = 0;
-        driving_mem = 0;
-        my_address = 0;
-        my_data = 0;
-        my_mem_sel = 0;
-        my_mem_w_en = 0;
+        input_addr = 8'd0;
+        output_addr = 8'd100;
 
-        // release reset
         repeat (4) @(posedge clk);
         rst = 0;
         @(posedge clk);
 
-        // prepare a small matrix with signed values in low DATA_WIDTH bits
-        // values: -3, -1, 0, 5, 127, -128 (for variety)
+        // manually initialize memory line by line
         vals[0] = -3;
         vals[1] = -1;
         vals[2] = 0;
@@ -104,27 +80,14 @@ module tb_relu_with_mem;
         vals[4] = 127;
         vals[5] = -128;
 
-        input_addr = 8'd0;
-        output_addr = 8'd100;
+        memory.memory[input_addr + 0] = {{(DATABUS_WIDTH-DATA_WIDTH){vals[0][DATA_WIDTH-1]}}, vals[0]};
+        memory.memory[input_addr + 1] = {{(DATABUS_WIDTH-DATA_WIDTH){vals[1][DATA_WIDTH-1]}}, vals[1]};
+        memory.memory[input_addr + 2] = {{(DATABUS_WIDTH-DATA_WIDTH){vals[2][DATA_WIDTH-1]}}, vals[2]};
+        memory.memory[input_addr + 3] = {{(DATABUS_WIDTH-DATA_WIDTH){vals[3][DATA_WIDTH-1]}}, vals[3]};
+        memory.memory[input_addr + 4] = {{(DATABUS_WIDTH-DATA_WIDTH){vals[4][DATA_WIDTH-1]}}, vals[4]};
+        memory.memory[input_addr + 5] = {{(DATABUS_WIDTH-DATA_WIDTH){vals[5][DATA_WIDTH-1]}}, vals[5]};
 
-        // write inputs into memory by driving the bus from TB
-        driving_mem = 1;
-        my_mem_sel = 1;    // read-mode when mem module sees sel=1 and w_en=0, it outputs data
-        my_mem_w_en = 1;   // but we want to write here, so assert w_en while driving
-
-        @(posedge clk);
-        for (i = 0; i < N; i = i + 1) begin
-            my_address <= input_addr + i;
-            // store signed value in low DATA_WIDTH bits
-            my_data <= {{(DATABUS_WIDTH-DATA_WIDTH){vals[i][DATA_WIDTH-1]}}, vals[i]};
-            @(posedge clk);
-            $display("TB wrote mem[%0d] = %0d", my_address, $signed(vals[i]));
-        end
-
-        // stop TB driving memory so DUT can drive address during read phases
-        driving_mem = 0;
-        my_mem_sel = 0;
-        my_mem_w_en = 0;
+        $display("Memory manually initialized with input values.");
 
         // start DUT
         @(posedge clk);
@@ -132,32 +95,18 @@ module tb_relu_with_mem;
         @(posedge clk);
         start = 0;
 
-        // wait for DUT to signal done (timeout in cycles)
-        timeout = 0;
-        while (!done && timeout < 1000) begin
-            @(posedge clk);
-            timeout = timeout + 1;
-        end
+        // wait for DUT to finish
+        wait(done);
 
-        if (timeout >= 1000) begin
-            $display("TIMEOUT waiting for DUT done");
-            $finish;
-        end
+        $display("DUT finished. Reading outputs:");
 
-        // read back outputs by driving memory read signals from TB
-        driving_mem = 1;
-        my_mem_sel = 1;
-        my_mem_w_en = 0; // read
-        @(posedge clk);
+        // read back outputs manually after DUT done
         for (i = 0; i < N; i = i + 1) begin
-            my_address <= output_addr + i;
-            @(posedge clk);
-            // reconstruct signed DATA_WIDTH value from low bits of data_bus
-            $display("mem[%0d] = %0d", my_address, $signed(data_bus[DATA_WIDTH-1:0]));
+            $display("mem[%0d] = %0d", output_addr + i, $signed(memory.memory[output_addr + i][DATA_WIDTH-1:0]));
         end
 
         $display("TEST DONE");
         $finish;
     end
-
 endmodule
+
