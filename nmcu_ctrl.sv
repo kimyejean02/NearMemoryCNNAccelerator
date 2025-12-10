@@ -1,7 +1,10 @@
 module nmcu_ctrl #(
     parameter NUM_NMCUS = 4,
     parameter ADDR_WIDTH = 16,
-    parameter DATABUS_WIDTH = 32
+    parameter DATABUS_WIDTH = 32,
+    parameter MAX_DESCS = 8,
+    parameter MAX_INPUT_DIM=15,
+    parameter MAX_KERNEL_DIM=7
 ) (
     input wire clk,
     input wire rst,
@@ -21,7 +24,7 @@ module nmcu_ctrl #(
     input wire [NUM_NMCUS-1:0] nmcu_mem_sel,
     input wire [NUM_NMCUS-1:0] nmcu_mem_w,
     output reg [NUM_NMCUS-1:0] nmcu_mem_ready,
-    output reg [ADDR_WIDTH-1:0] nmcu_addr_bus,
+    output reg [ADDR_WIDTH-1:0] nmcu_addr_bus [NUM_NMCUS-1:0],
     inout wire [DATABUS_WIDTH-1:0] nmcu_data_bus [NUM_NMCUS-1:0],
 
     // mem interface
@@ -42,6 +45,13 @@ module nmcu_ctrl #(
     } state_t;
     
     state_t state;
+
+    typedef enum logic [1:0] {
+        NOP_TYPE,
+        CONV_TYPE,
+        MAXP_TYPE,
+        RELU_TYPE
+    } layer_type_t;
 
     // descriptor stuff
     reg [31:0] descriptors [0:MAX_DESCS-1];
@@ -77,14 +87,18 @@ module nmcu_ctrl #(
     reg [DATABUS_WIDTH-1:0] data;
     assign data_bus = (mem_sel && mem_w) ? data : {DATABUS_WIDTH{1'bZ}};
     
-    genvar i;
+    genvar ni;
     generate
-        for (i = 0; i < NUM_NMCUS; i = i + 1) begin
-            assign nmcu_data_bus[i] = (nmcu_mem_sel[i] && !nmcu_mem_w[i] && nmcu_mem_ready[i]) ? data_bus : 'z;
+        for (ni = 0; ni < NUM_NMCUS; ni = ni + 1) begin
+            assign nmcu_data_bus[ni] = (nmcu_mem_sel[ni] && !nmcu_mem_w[ni] && nmcu_mem_ready[ni]) ? data_bus : 'z;
+            assign nmcu_mem_ready[ni] = ready;
         end
     endgenerate
 
     reg [$clog2(NUM_NMCUS)-1:0] nmcu_ind;
+
+    integer k;
+    integer l;
 
     initial begin 
         state <= IDLE;
@@ -100,8 +114,15 @@ module nmcu_ctrl #(
         data <= 0;
         done <= 0;
         nmcu_start <= '0;
-        nmcu_mem_ready <= '0;
-        nmcu_addr_bus <= '0;
+
+        for (k=0; k<NUM_NMCUS; k = k+1) begin
+            nmcu_addr_bus[k] <= '0;
+        end
+
+        for (l=0; l<MAX_DESCS; l = l+1) begin 
+            descriptors[l] <= 0;
+        end
+
         nmcu_ind <= 0;
     end
 
@@ -120,8 +141,14 @@ module nmcu_ctrl #(
             data <= 0;
             done <= 0;
             nmcu_start <= '0;
-            nmcu_mem_ready <= '0;
-            nmcu_addr_bus <= '0;
+
+            for (k=0; k<NUM_NMCUS; k = k+1) begin
+                nmcu_addr_bus[k] <= '0;
+            end
+            for (l=0; l<MAX_DESCS; l = l+1) begin 
+                descriptors[l] <= 0;
+            end
+
             nmcu_ind <= 0;
        end else begin
             if (mem_stall) begin 
@@ -146,14 +173,20 @@ module nmcu_ctrl #(
                         if (nmcu_state[0] == READ_DESCS) begin
                             mem_sel <= 1;
                             mem_w <= 0;
+
+                            for (k=0; k<NUM_NMCUS; k = k+1) begin
+                                nmcu_addr_bus[k] <= address;
+                            end
+
                             if (ready) begin 
-                                nmcu_mem_ready <= '1;
-                                nmcu_addr_bus <= address;
+                                descriptors[desc_iter] <= data_bus;
+
                                 mem_stall <= 1;
+                                
                                 if (desc_iter == MAX_DESCS-1 || data_bus[1:0] == NOP_TYPE) begin
                                     state <= READ_KERNELS;
                                     desc_iter <= 0;
-                                    address <= kernel_addr;
+                                    address <= descriptors[0][31:16];
                                 end else begin
                                     address <= address + 1;
                                     desc_iter <= desc_iter + 1;
@@ -169,9 +202,11 @@ module nmcu_ctrl #(
                                 mem_sel <= 1;
                                 mem_w <= 0;
                                 
+                                for (k=0; k<NUM_NMCUS; k = k+1) begin
+                                    nmcu_addr_bus[k] <= address;
+                                end
+
                                 if (ready) begin
-                                    nmcu_mem_ready <= '1;
-                                    nmcu_addr_bus <= address;
                                     mem_stall <= 1;
 
                                     if (i == kernel_size - 1 && j == kernel_size - 1) begin 
@@ -218,8 +253,9 @@ module nmcu_ctrl #(
                             mem_sel <= 1;
                             mem_w <= 0;
                             if (ready) begin
-                                nmcu_mem_ready <= '1;
-                                nmcu_addr_bus <= address;
+                                for (k=0; k<NUM_NMCUS; k = k+1) begin
+                                    nmcu_addr_bus[k] <= address;
+                                end
                                 mem_stall <= 1;
 
                                 if (x == full_input_height - 1 && y == full_input_width - 1) begin
@@ -252,12 +288,10 @@ module nmcu_ctrl #(
                             mem_sel <= 1;
                             address  <= output_addr + nmcu_ind;
                             data <= nmcu_data_bus[nmcu_ind];
-                            nmcu_mem_ready[nmcu_ind] <= ready;
                             if (ready) begin 
                                 mem_stall <= 1;
                             end
                         end else begin 
-                            nmcu_mem_ready[nmcu_ind] <= 0;
                             nmcu_ind <= (nmcu_ind + 1) % NUM_NMCUS;
                         end
                     end

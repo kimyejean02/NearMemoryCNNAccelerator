@@ -3,14 +3,12 @@ module sync_nmcu #(
     parameter DATABUS_WIDTH = 32,
     parameter MAX_DESCS = 8,
     parameter MAX_INPUT_DIM=15,
-    parameter MAX_KERNEL_DIM=7,
-    parameter MAX_CNNS=2
+    parameter MAX_KERNEL_DIM=7
 ) (
     input wire clk,
     input wire rst,
 
     input wire start,
-    output reg done,
 
     input wire [ADDR_WIDTH-1:0] nmcu_desc, // memory loc containing full description of NMCU network
     input wire [ADDR_WIDTH-1:0] input_addr, // beginning input address
@@ -209,7 +207,6 @@ module sync_nmcu #(
         address <= 0;
         data <= 0;
         local_activation_inp_ind <= 0;
-        done <= 0;
 
         conv_pe_rst <= 0;
         conv_pe_start <= 0;
@@ -232,7 +229,6 @@ module sync_nmcu #(
             address <= 0;
             data <= 0;
             local_activation_inp_ind <= 0;
-            done <= 0;
 
             conv_pe_rst <= 0;
             conv_pe_start <= 0;
@@ -248,7 +244,6 @@ module sync_nmcu #(
                 case (state)
                     IDLE: begin 
                         state <= IDLE;
-                        done <= 0;
                         i <= 0;
                         if (start) begin 
                             i <= 0;
@@ -509,7 +504,6 @@ module sync_nmcu #(
                     FINISHED: begin 
                         mem_sel <= 0;
                         mem_w <= 0;
-                        done <= 1;
                     end
                 endcase
             end

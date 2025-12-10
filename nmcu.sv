@@ -171,28 +171,6 @@ module nmcu #(
         .out(relu_pe_out)
     );
 
-    // genvar k;
-    // genvar l;
-    // generate
-    //     for (k = 0; k < MAX_INPUT_DIM; k = k+1) begin 
-    //         for (l = 0; l < MAX_INPUT_DIM; l = l+1) begin 
-    //             relu #(
-    //                 .DATA_WIDTH(DATABUS_WIDTH)
-    //             ) relu_pe0 (
-    //                 .in(local_activations[0][k][l]),
-    //                 .out(relu_out[0][k][l])
-    //             );
-    //
-    //             relu #(
-    //                 .DATA_WIDTH(DATABUS_WIDTH)
-    //             ) relu_pe1 (
-    //                 .in(local_activations[1][k][l]),
-    //                 .out(relu_out[1][k][l])
-    //             );
-    //         end
-    //     end
-    // endgenerate
-
     initial begin 
         state <= IDLE;
         desc_iter <= 0;

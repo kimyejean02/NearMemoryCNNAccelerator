@@ -48,7 +48,7 @@ module sync_near_mem_tb;
     generate
         for (i = 0; i < OUTPUT_DIM; i = i+1) begin
             for (j = 0; j < OUTPUT_DIM; j = j+1) begin
-                nmcu #(
+                sync_nmcu #(
                     .ADDR_WIDTH(ADDR_WIDTH),
                     .DATABUS_WIDTH(DATABUS_WIDTH),
                     .MAX_DESCS(MAX_DESCS),
@@ -103,8 +103,8 @@ module sync_near_mem_tb;
         .start(start),
         .done(done),
         .nmcu_desc(nmcu_desc),
-        .input_addr(input_addresses[0]),
-        .output_addr(output_addresses[0]),
+        .input_addr(input_addresses[0][0]),
+        .output_addr(output_addresses[0][0]),
         .full_input_width(full_input_width),
         .full_input_height(full_input_height),
         .full_output_width(full_output_width),
