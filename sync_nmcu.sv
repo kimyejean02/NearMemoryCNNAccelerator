@@ -261,7 +261,7 @@ module sync_nmcu #(
                             if (desc_iter == MAX_DESCS-1 || data_bus[1:0] == NOP_TYPE) begin
                                 state <= READ_KERNELS;
                                 desc_iter <= 0;
-                                address <= kernel_addr;
+                                address <= descriptors[0][31:16];
                             end else begin
                                 address <= address + 1;
                                 desc_iter <= desc_iter + 1;
