@@ -90,7 +90,7 @@ module nmcu_ctrl #(
     genvar ni;
     generate
         for (ni = 0; ni < NUM_NMCUS; ni = ni + 1) begin
-            assign nmcu_data_bus[ni] = (nmcu_mem_sel[ni] && !nmcu_mem_w[ni] && nmcu_mem_ready[ni]) ? data_bus : 'z;
+            assign nmcu_data_bus[ni] = (nmcu_mem_sel[ni] && !nmcu_mem_w[ni]) ? data_bus : 'z;
             assign nmcu_mem_ready[ni] = ready;
         end
     endgenerate

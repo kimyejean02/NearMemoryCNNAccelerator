@@ -254,10 +254,13 @@ module sync_nmcu #(
 
                     READ_DESCS: begin 
                         if (ready && address_bus == address) begin 
+                            mem_sel <= 1;
+                            mem_w <= 0;
+
                             descriptors[desc_iter] <= data_bus;
                             // mem_stall <= 1;
                             if (desc_iter == MAX_DESCS-1 || data_bus[1:0] == NOP_TYPE) begin
-                                state <= READ_INPUTS;
+                                state <= READ_KERNELS;
                                 desc_iter <= 0;
                                 address <= kernel_addr;
                             end else begin
@@ -298,9 +301,7 @@ module sync_nmcu #(
                                     address <= address + 1;
                                 end
                             end
-                        end
-
-                        if (layer_type == NOP_TYPE || desc_iter == MAX_DESCS-1) begin 
+                        end else if (layer_type == NOP_TYPE || desc_iter == MAX_DESCS-1) begin 
                             // end iteration
                             desc_iter <= 0;
                             mem_sel <= 0;
