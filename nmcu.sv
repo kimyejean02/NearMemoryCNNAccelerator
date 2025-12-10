@@ -160,29 +160,38 @@ module nmcu #(
     );
 
     // relu processing element
-    wire [DATABUS_WIDTH-1:0] relu_out [0:1][0:MAX_INPUT_DIM-1][0:MAX_INPUT_DIM-1];
+    reg [DATABUS_WIDTH-1:0] relu_pe_in;
+    wire [DATABUS_WIDTH-1:0] relu_pe_out;
+    reg relu_stall;
 
-    genvar k;
-    genvar l;
-    generate
-        for (k = 0; k < MAX_INPUT_DIM; k = k+1) begin 
-            for (l = 0; l < MAX_INPUT_DIM; l = l+1) begin 
-                relu #(
-                    .DATA_WIDTH(DATABUS_WIDTH)
-                ) relu_pe0 (
-                    .in(local_activations[0][k][l]),
-                    .out(relu_out[0][k][l])
-                );
+    relu #(
+        .DATA_WIDTH(DATABUS_WIDTH)
+    ) relu_pe (
+        .in(relu_pe_in),
+        .out(relu_pe_out)
+    );
 
-                relu #(
-                    .DATA_WIDTH(DATABUS_WIDTH)
-                ) relu_pe1 (
-                    .in(local_activations[1][k][l]),
-                    .out(relu_out[1][k][l])
-                );
-            end
-        end
-    endgenerate
+    // genvar k;
+    // genvar l;
+    // generate
+    //     for (k = 0; k < MAX_INPUT_DIM; k = k+1) begin 
+    //         for (l = 0; l < MAX_INPUT_DIM; l = l+1) begin 
+    //             relu #(
+    //                 .DATA_WIDTH(DATABUS_WIDTH)
+    //             ) relu_pe0 (
+    //                 .in(local_activations[0][k][l]),
+    //                 .out(relu_out[0][k][l])
+    //             );
+    //
+    //             relu #(
+    //                 .DATA_WIDTH(DATABUS_WIDTH)
+    //             ) relu_pe1 (
+    //                 .in(local_activations[1][k][l]),
+    //                 .out(relu_out[1][k][l])
+    //             );
+    //         end
+    //     end
+    // endgenerate
 
     initial begin 
         state <= IDLE;
@@ -203,6 +212,7 @@ module nmcu #(
         conv_pe_start <= 0;
 
         maxp_stall <= 0;
+        relu_stall <= 0;
     end
 
     always @(posedge clk or posedge rst) begin 
@@ -225,6 +235,7 @@ module nmcu #(
             conv_pe_start <= 0;
 
             maxp_stall <= 0;
+            relu_stall <= 0;
        end else begin
             if (mem_stall) begin 
                 mem_sel <= 0;
@@ -462,19 +473,36 @@ module nmcu #(
                     end
 
                     RELU: begin 
-                        local_activations[~local_activation_inp_ind] <= relu_out[local_activation_inp_ind];
-                        local_activation_inp_ind <= ~local_activation_inp_ind;
-                        desc_iter <= desc_iter + 1;
+                        if (relu_stall == 0) begin
+                            relu_pe_in <= local_activations[local_activation_inp_ind][x][y];
+                            relu_stall <= 1;
+                        end else begin
+                            local_activations[~local_activation_inp_ind][x][y] <= relu_pe_out;
+                            relu_stall <= 0;
 
-                        case (next_layer_type)
-                            NOP_TYPE: begin 
-                                state <= NOP;
-                                address <= output_addr;
+                            if (x == next_inp_height - 1 && y == next_inp_width - 1) begin
+                                local_activation_inp_ind <= ~local_activation_inp_ind;
+                                desc_iter <= desc_iter + 1;
+
+                                x <= 0;
+                                y <= 0;
+
+                                case (next_layer_type)
+                                    NOP_TYPE: begin 
+                                        state <= NOP;
+                                        address <= output_addr;
+                                    end
+                                    CONV_TYPE: state <= CONV;
+                                    MAXP_TYPE: state <= MAXP;
+                                    RELU_TYPE: state <= RELU;
+                                endcase
+                            end else if (y == next_inp_width - 1) begin 
+                                x <= x + 1;
+                                y <= 0;
+                            end else begin
+                                y <= y + 1;
                             end
-                            CONV_TYPE: state <= CONV;
-                            MAXP_TYPE: state <= MAXP;
-                            RELU_TYPE: state <= RELU;
-                        endcase
+                        end
                     end
 
                     FINISHED: begin 
