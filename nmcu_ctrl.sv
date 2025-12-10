@@ -245,34 +245,30 @@ module nmcu_ctrl #(
                     end
 
                     READ_INPUTS: begin
-                        if (nmcu_state[0] == READ_INPUTS) begin
-                            mem_sel <= 1;
-                            mem_w <= 0;
-                            if (ready) begin
-                                for (k=0; k<NUM_NMCUS; k = k+1) begin
-                                    nmcu_addr_bus[k] <= address;
-                                end
-                                mem_stall <= 1;
+                        mem_sel <= 1;
+                        mem_w <= 0;
+                        if (ready) begin
+                            for (k=0; k<NUM_NMCUS; k = k+1) begin
+                                nmcu_addr_bus[k] <= address;
+                            end
+                            mem_stall <= 1;
 
-                                if (x == full_input_height - 1 && y == full_input_width - 1) begin
-                                    x <= 0;
-                                    y <= 0;
+                            if (x == full_input_height - 1 && y == full_input_width - 1) begin
+                                x <= 0;
+                                y <= 0;
 
-                                    mem_sel <= 0;
-                                    mem_w <= 0;
+                                mem_sel <= 0;
+                                mem_w <= 0;
 
-                                    state <= WRITE;
-                                end else if (y == full_input_width - 1) begin
-                                    x <= x + 1;
-                                    y <= 0;
-                                    
-                                    // go back to first elem in row, then go to
-                                    // next row entirely
-                                    address <= address + 1;
-                                end else begin 
-                                    y <= y+1;
-                                    address <= address + 1;
-                                end
+                                state <= WRITE;
+                            end else if (y == full_input_width - 1) begin
+                                x <= x + 1;
+                                y <= 0;
+
+                                address <= address + 1;
+                            end else begin 
+                                y <= y+1;
+                                address <= address + 1;
                             end
                         end
                     end
