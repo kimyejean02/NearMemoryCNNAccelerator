@@ -89,6 +89,8 @@ module nmcu_ctrl #(
     
     // write ack
     reg [NUM_NMCUS-1:0] write_ack;
+    reg write_occurred;
+    reg sweep_active;
 
     genvar ni;
     generate
@@ -116,6 +118,8 @@ module nmcu_ctrl #(
         data <= 0;
         done <= 0;
         nmcu_start <= '0;
+        write_occurred <= 0;
+        sweep_active <= 0;
 
         for (k=0; k<NUM_NMCUS; k = k+1) begin
             nmcu_addr_bus[k] <= '0;
@@ -144,6 +148,8 @@ module nmcu_ctrl #(
             data <= 0;
             done <= 0;
             nmcu_start <= '0;
+            write_occurred <= 0;
+            sweep_active <= 0;
 
             for (k=0; k<NUM_NMCUS; k = k+1) begin
                 nmcu_addr_bus[k] <= '0;
@@ -279,11 +285,21 @@ module nmcu_ctrl #(
                     end
 
                     WRITE: begin
-                        // writeback here
+                        if (nmcu_ind == 0) begin 
+                            if (sweep_active && !write_occurred) begin 
+                                state <= FINISHED;
+                                mem_sel <= 0;
+                                mem_w <= 0;
+                            end
+                            sweep_active <= 1;
+                            write_occurred <= 0;
+                        end
+
                         if (nmcu_mem_sel[nmcu_ind] && nmcu_mem_w[nmcu_ind] && !nmcu_mem_ready[nmcu_ind]) begin // unserviced request
                             mem_w <= 1;
                             mem_sel <= 1;
                             write_ack[nmcu_ind] <= 1;
+                            write_occurred <= 1;
                             address  <= output_addr + nmcu_ind;
                             data <= nmcu_data_bus[nmcu_ind];
                             if (ready) begin 

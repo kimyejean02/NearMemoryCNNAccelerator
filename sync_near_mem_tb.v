@@ -233,13 +233,14 @@ module sync_near_mem_tb;
         $display("NMCU operation finished");
 
         // Print output memory (assuming output at 0x0200)
-        // $display("Output memory:");
-        // for (int i = 0; i < 2; i = i + 1) begin
-        //     for (int j = 0; j < 2; j = j + 1) begin
-        //         $write("%0d ", $signed(memory.memory[16'h0200 + i*2 + j]));
-        //     end
-        //     $write("\n");
-        // end
+        $display("Output memory:");
+        for (int i = 0; i < OUTPUT_DIM; i = i + 1) begin
+            for (int j = 0; j < OUTPUT_DIM; j = j + 1) begin
+                $write("%0d ",
+                    $signed(memory.memory[16'h0200 + i*OUTPUT_DIM + j]));
+            end
+            $write("\n");
+        end
 
         $finish;
     end
