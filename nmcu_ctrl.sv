@@ -196,55 +196,51 @@ module nmcu_ctrl #(
                     end
 
                     READ_KERNELS: begin 
-                        if (nmcu_state[0] == READ_KERNELS) begin
-                            if (layer_type == CONV_TYPE) begin 
-                                // if conv, load kernel
-                                mem_sel <= 1;
-                                mem_w <= 0;
-                                
-                                for (k=0; k<NUM_NMCUS; k = k+1) begin
-                                    nmcu_addr_bus[k] <= address;
-                                end
-
-                                if (ready) begin
-                                    mem_stall <= 1;
-
-                                    if (i == kernel_size - 1 && j == kernel_size - 1) begin 
-                                        i <= 0;
-                                        j <= 0;
-
-                                        mem_sel <= 0;
-                                        mem_w <= 0;
-                                        
-                                        desc_iter <= desc_iter + 1;
-                                    end else if (j == kernel_size - 1) begin 
-                                        i <= i + 1;
-                                        j <= 0;
-                                        // we assume the kernel is stored in row
-                                        // major order and since we're loading in
-                                        // the whole thing we don't have to do any
-                                        // funky stuff
-                                        address <= address + 1;
-                                    end else begin 
-                                        j <= j + 1;
-                                        address <= address + 1;
-                                    end
-                                end
+                        if (layer_type == CONV_TYPE) begin 
+                            // if conv, load kernel
+                            mem_sel <= 1;
+                            mem_w <= 0;
+                            
+                            for (k=0; k<NUM_NMCUS; k = k+1) begin
+                                nmcu_addr_bus[k] <= address;
                             end
 
-                            if (layer_type == NOP_TYPE || desc_iter == MAX_DESCS-1) begin 
-                                // end iteration
-                                desc_iter <= 0;
-                                mem_sel <= 0;
-                                mem_w <= 0;
-                                x <= 0;
-                                y <= 0;
-                                state <= READ_INPUTS;
-                                address <= input_addr;
-                            end else if (layer_type != CONV_TYPE) begin 
-                                desc_iter <= desc_iter + 1;
-                                address <= descriptors[desc_iter+1][31:16]; // next kernel address
+                            if (ready) begin
+                                mem_stall <= 1;
+
+                                if (i == kernel_size - 1 && j == kernel_size - 1) begin 
+                                    i <= 0;
+                                    j <= 0;
+
+                                    mem_sel <= 0;
+                                    mem_w <= 0;
+                                    
+                                    desc_iter <= desc_iter + 1;
+                                end else if (j == kernel_size - 1) begin 
+                                    i <= i + 1;
+                                    j <= 0;
+                                    // we assume the kernel is stored in row
+                                    // major order and since we're loading in
+                                    // the whole thing we don't have to do any
+                                    // funky stuff
+                                    address <= address + 1;
+                                end else begin 
+                                    j <= j + 1;
+                                    address <= address + 1;
+                                end
                             end
+                        end else if (layer_type == NOP_TYPE || desc_iter == MAX_DESCS-1) begin 
+                            // end iteration
+                            desc_iter <= 0;
+                            mem_sel <= 0;
+                            mem_w <= 0;
+                            x <= 0;
+                            y <= 0;
+                            state <= READ_INPUTS;
+                            address <= input_addr;
+                        end else if (layer_type != CONV_TYPE) begin 
+                            desc_iter <= desc_iter + 1;
+                            address <= descriptors[desc_iter+1][31:16]; // next kernel address
                         end
                     end
 
