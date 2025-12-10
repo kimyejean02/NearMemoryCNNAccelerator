@@ -87,18 +87,20 @@ module nmcu_ctrl #(
     reg [DATABUS_WIDTH-1:0] data;
     assign data_bus = (mem_sel && mem_w) ? data : {DATABUS_WIDTH{1'bZ}};
     
+    // write ack
+    reg [NUM_NMCUS-1:0] write_ack;
+
     genvar ni;
     generate
         for (ni = 0; ni < NUM_NMCUS; ni = ni + 1) begin
             assign nmcu_data_bus[ni] = (nmcu_mem_sel[ni] && !nmcu_mem_w[ni]) ? data_bus : 'z;
-            assign nmcu_mem_ready[ni] = ready;
+            assign nmcu_mem_ready[ni] = (nmcu_state[ni] >= 4)?write_ack[ni]:ready;
         end
     endgenerate
 
     reg [$clog2(NUM_NMCUS)-1:0] nmcu_ind;
 
     integer k;
-    integer l;
 
     initial begin 
         state <= IDLE;
@@ -117,10 +119,11 @@ module nmcu_ctrl #(
 
         for (k=0; k<NUM_NMCUS; k = k+1) begin
             nmcu_addr_bus[k] <= '0;
+            write_ack[k] <= '0;
         end
 
-        for (l=0; l<MAX_DESCS; l = l+1) begin 
-            descriptors[l] <= 0;
+        for (k=0; k<MAX_DESCS; k = k+1) begin 
+            descriptors[k] <= 0;
         end
 
         nmcu_ind <= 0;
@@ -144,9 +147,10 @@ module nmcu_ctrl #(
 
             for (k=0; k<NUM_NMCUS; k = k+1) begin
                 nmcu_addr_bus[k] <= '0;
+                write_ack[k] <= '0;
             end
-            for (l=0; l<MAX_DESCS; l = l+1) begin 
-                descriptors[l] <= 0;
+            for (k=0; k<MAX_DESCS; k = k+1) begin 
+                descriptors[k] <= 0;
             end
 
             nmcu_ind <= 0;
@@ -154,6 +158,7 @@ module nmcu_ctrl #(
             if (mem_stall) begin 
                 mem_sel <= 0;
                 mem_w <= 0;
+                write_ack[nmcu_ind] <= 0;
                 mem_stall <= 0;
             end else begin
                 case (state)
@@ -278,6 +283,7 @@ module nmcu_ctrl #(
                         if (nmcu_mem_sel[nmcu_ind] && nmcu_mem_w[nmcu_ind] && !nmcu_mem_ready[nmcu_ind]) begin // unserviced request
                             mem_w <= 1;
                             mem_sel <= 1;
+                            write_ack[nmcu_ind] <= 1;
                             address  <= output_addr + nmcu_ind;
                             data <= nmcu_data_bus[nmcu_ind];
                             if (ready) begin 
